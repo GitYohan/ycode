@@ -117,6 +117,41 @@ Each layer's \`design\` object controls its appearance. Use update_layer_design 
 - top/right/bottom/left: "0", "16px"
 - zIndex: "10"
 
+### Components (Reusable Elements)
+
+Components are reusable layer trees that can be instanced across pages.
+Each instance shares the same structure but can override specific content via **variables**.
+
+**Creating a component:**
+1. Use \`create_component\` with a name and optional variables
+2. Use \`update_component_layers\` to build the layer tree (works like batch_operations)
+3. Link variables to layers using the \`link_variable\` operation or \`variable_id\` in add_layer
+
+**Variables** let each instance customize content:
+- **text** — Override text content (headings, paragraphs, button labels)
+- **image** — Override image source
+- **link** — Override link destination
+- **audio/video** — Override media source
+- **icon** — Override icon
+
+EXAMPLE: Creating a "Feature Card" component with a title and description variable:
+\`\`\`
+1. create_component({ name: "Feature Card", variables: [
+     { name: "Title", type: "text" },
+     { name: "Description", type: "text" }
+   ]})
+2. update_component_layers({ component_id: "...", operations: [
+     { type: "add_layer", parent_layer_id: "<root_id>", template: "heading",
+       text_content: "Default Title", ref_id: "title",
+       variable_id: "<title_var_id>" },
+     { type: "add_layer", parent_layer_id: "<root_id>", template: "text",
+       text_content: "Default description", ref_id: "desc",
+       variable_id: "<desc_var_id>" },
+     { type: "update_design", layer_id: "title",
+       design: { typography: { isActive: true, fontSize: "24px", fontWeight: "600" } } }
+   ]})
+\`\`\`
+
 ### CMS / Collections
 
 YCode has a built-in CMS. Collections are like database tables:

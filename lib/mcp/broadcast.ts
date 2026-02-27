@@ -7,7 +7,7 @@
  */
 
 import { getSupabaseAdmin } from '@/lib/supabase-server';
-import type { Layer, Page } from '@/types';
+import type { Component, Layer, Page } from '@/types';
 
 const MCP_USER_ID = '__mcp_agent__';
 
@@ -71,6 +71,48 @@ export async function broadcastPageUpdated(
 export async function broadcastPageDeleted(pageId: string): Promise<void> {
   await broadcast('pages:updates', 'page_deleted', {
     pageId,
+    user_id: MCP_USER_ID,
+    timestamp: Date.now(),
+  });
+}
+
+// Component broadcasts (channel: components:updates)
+
+export async function broadcastComponentCreated(component: Component): Promise<void> {
+  await broadcast('components:updates', 'component_created', {
+    component: component as unknown as Record<string, unknown>,
+    user_id: MCP_USER_ID,
+    timestamp: Date.now(),
+  });
+}
+
+export async function broadcastComponentUpdated(
+  componentId: string,
+  changes: Record<string, unknown>,
+): Promise<void> {
+  await broadcast('components:updates', 'component_updated', {
+    component_id: componentId,
+    user_id: MCP_USER_ID,
+    changes,
+    timestamp: Date.now(),
+  });
+}
+
+export async function broadcastComponentDeleted(componentId: string): Promise<void> {
+  await broadcast('components:updates', 'component_deleted', {
+    component_id: componentId,
+    user_id: MCP_USER_ID,
+    timestamp: Date.now(),
+  });
+}
+
+export async function broadcastComponentLayersUpdated(
+  componentId: string,
+  layers: Layer[],
+): Promise<void> {
+  await broadcast('components:updates', 'component_layers_updated', {
+    component_id: componentId,
+    layers,
     user_id: MCP_USER_ID,
     timestamp: Date.now(),
   });
