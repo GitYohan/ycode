@@ -1,8 +1,7 @@
 import * as React from 'react'
-import { ChevronUp, ChevronDown } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Icon } from '@/components/ui/icon'
 
 interface InputProps extends Omit<React.ComponentProps<'input'>, 'size'> {
   size?: 'xs' | 'sm';
@@ -147,28 +146,24 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(function Input({
           {...props}
         />
         {!props.disabled && (
-          <div className="absolute right-px top-px bottom-px items-center rounded-r-[10px] bg-linear-to-l from-input backdrop-blur hidden group-hover:flex px-1.5">
-            <div className="flex flex-col">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
+          <div className="absolute right-px top-px bottom-px items-center rounded-r-[10px] hidden group-hover:flex px-1.5">
+            <div className="flex flex-col -gap-px">
+              <span
+                role="button"
+                tabIndex={-1}
+                className="p-0 opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
                 onClick={handleIncrement}
-                className="size-2.5"
-                tabIndex={-1}
               >
-                <ChevronUp />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
+                <Icon name="chevronUp" className="size-2.5" />
+              </span>
+              <span
+                role="button"
+                tabIndex={-1}
+                className="p-0 opacity-50 hover:opacity-100 transition-opacity cursor-pointer -mt-0.5"
                 onClick={handleDecrement}
-                className="size-2.5"
-                tabIndex={-1}
               >
-                <ChevronDown />
-              </Button>
+                <Icon name="chevronDown" className="size-2.5" />
+              </span>
             </div>
           </div>
         )}

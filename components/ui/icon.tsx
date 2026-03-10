@@ -6,7 +6,7 @@ import React from 'react';
  */
 export interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: (
-    'x' | 'layers' | 'database' | 'plus' | 'chevronCombo' | 'chevronDown' | 'check' | 'textAlignLeft' | 'textAlignRight' | 'textAlignCenter' | 'textAlignJustify' | 'individualBorders'
+    'x' | 'layers' | 'database' | 'plus' | 'chevronCombo' | 'chevronDown' | 'chevronUp' | 'check' | 'textAlignLeft' | 'textAlignRight' | 'textAlignCenter' | 'textAlignJustify' | 'individualBorders'
     | 'borders' | 'borderTopLeft' | 'letterSpacing' | 'lineHeight' | 'columns' | 'rows' | 'grid' | 'alignStart' | 'alignCenter' | 'alignEnd' | 'alignStretch' | 'verticalGap'
     | 'horizontalGap' | 'link' | 'paddingSide' | 'block' | 'section' | 'container' | 'separator' | 'image' | 'icon' | 'video' | 'text' | 'layout' | 'heading' | 'type'
     | 'file-text' | 'edit' | 'box' | 'chevronRight' | 'minSize' | 'maxSize' | 'undo' | 'redo' | 'page' | 'dynamicPage' | 'homepage' | 'folder' | 'dotsHorizontal' | 'refresh'
@@ -389,6 +389,15 @@ const ICONS: Record<IconProps['name'], React.ReactNode> = {
     <>
       <path
         d="M2.5 4.5L6 8l3.5-3.5" fill="none"
+        stroke="currentColor" strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round"
+      />
+    </>
+  ),
+  chevronUp: (
+    <>
+      <path
+        d="M2.5 7.5L6 4l3.5 3.5" fill="none"
         stroke="currentColor" strokeWidth="1.5"
         strokeLinecap="round" strokeLinejoin="round"
       />
