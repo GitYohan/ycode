@@ -99,6 +99,7 @@ interface EditorActions {
   closeRichTextSheet: () => void;
   setActiveSublayerIndex: (index: number | null) => void;
   setActiveListItemIndex: (index: number | null) => void;
+  selectLayerWithSublayer: (layerId: string, sublayer: { textStyleKey: string | null; sublayerIndex: number | null; listItemIndex: number | null }) => void;
   // Element picker actions
   startElementPicker: (onSelect: (layerId: string) => void, validate?: (layerId: string) => boolean, originPosition?: { x: number; y: number }) => void;
   stopElementPicker: () => void;
@@ -608,6 +609,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   closeRichTextSheet: () => set({ richTextSheetLayerId: null }),
   setActiveSublayerIndex: (index) => set({ activeSublayerIndex: index }),
   setActiveListItemIndex: (index) => set({ activeListItemIndex: index }),
+
+  selectLayerWithSublayer: (layerId, sublayer) => {
+    set({
+      selectedLayerId: layerId,
+      selectedLayerIds: [layerId],
+      lastSelectedLayerId: layerId,
+      activeTextStyleKey: sublayer.textStyleKey,
+      activeSublayerIndex: sublayer.sublayerIndex,
+      activeListItemIndex: sublayer.listItemIndex,
+    });
+
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      const isLayerRoute = /^\/ycode\/(layers|pages|components)\//.test(pathname);
+      if (isLayerRoute) {
+        updateUrlQueryParam('layer', layerId);
+      }
+    }
+  },
 
   // Element picker actions
   startElementPicker: (onSelect, validate, originPosition) => set({

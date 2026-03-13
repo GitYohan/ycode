@@ -537,7 +537,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const getReturnDestination = useEditorStore((state) => state.getReturnDestination);
   const clearSelection = useEditorStore((state) => state.clearSelection);
   const setActiveSidebarTab = useEditorStore((state) => state.setActiveSidebarTab);
-  const setActiveTextStyleKey = useEditorStore((state) => state.setActiveTextStyleKey);
+  const selectLayerWithSublayer = useEditorStore((state) => state.selectLayerWithSublayer);
 
   const selectedLocaleId = useLocalisationStore((state) => state.selectedLocaleId);
   const getSelectedLocale = useLocalisationStore((state) => state.getSelectedLocale);
@@ -557,7 +557,6 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const activeSublayerIndex = useEditorStore((state) => state.activeSublayerIndex);
   const setActiveSublayerIndex = useEditorStore((state) => state.setActiveSublayerIndex);
   const activeListItemIndex = useEditorStore((state) => state.activeListItemIndex);
-  const setActiveListItemIndex = useEditorStore((state) => state.setActiveListItemIndex);
   const elementPicker = useEditorStore((state) => state.elementPicker);
   const stopElementPicker = useEditorStore((state) => state.stopElementPicker);
   const assets = useAssetsStore((state) => state.assets);
@@ -575,8 +574,6 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const toggleStrike = useCanvasTextEditorStore((state) => state.toggleStrike);
   const toggleSubscript = useCanvasTextEditorStore((state) => state.toggleSubscript);
   const toggleSuperscript = useCanvasTextEditorStore((state) => state.toggleSuperscript);
-  const toggleBulletList = useCanvasTextEditorStore((state) => state.toggleBulletList);
-  const toggleOrderedList = useCanvasTextEditorStore((state) => state.toggleOrderedList);
   const setHeading = useCanvasTextEditorStore((state) => state.setHeading);
   const focusEditor = useCanvasTextEditorStore((state) => state.focusEditor);
   const requestFinishEditing = useCanvasTextEditorStore((state) => state.requestFinish);
@@ -1037,16 +1034,16 @@ const CenterCanvas = React.memo(function CenterCanvas({
     }
 
     if (!isPreviewMode) {
-      setSelectedLayerId(layerId);
       // Switch to Layers tab when a layer is clicked on canvas
       setActiveSidebarTab('layers');
 
       // Detect if clicked on a text style element or a richText sublayer block
+      let textStyleKey: string | null = null;
+      let blockIndex: number | null = null;
+      let listItemIndex: number | null = null;
+
       if (event) {
         let target = event.target as HTMLElement;
-        let textStyleKey: string | null = null;
-        let blockIndex: number | null = null;
-        let listItemIndex: number | null = null;
 
         // Walk up the DOM tree to find data-style, data-block-index, data-list-item-index
         while (target && target !== event.currentTarget) {
@@ -1064,13 +1061,16 @@ const CenterCanvas = React.memo(function CenterCanvas({
           }
           target = target.parentElement as HTMLElement;
         }
-
-        setActiveTextStyleKey(textStyleKey);
-        setActiveSublayerIndex(Number.isFinite(blockIndex) ? blockIndex : null);
-        setActiveListItemIndex(Number.isFinite(listItemIndex) ? listItemIndex : null);
       }
+
+      // Use atomic state update to prevent transient null activeTextStyleKey
+      selectLayerWithSublayer(layerId, {
+        textStyleKey,
+        sublayerIndex: Number.isFinite(blockIndex) ? blockIndex : null,
+        listItemIndex: Number.isFinite(listItemIndex) ? listItemIndex : null,
+      });
     }
-  }, [isPreviewMode, setSelectedLayerId, setActiveSidebarTab, setActiveTextStyleKey, setActiveSublayerIndex, setActiveListItemIndex]);
+  }, [isPreviewMode, setActiveSidebarTab, selectLayerWithSublayer]);
 
   const handleCanvasLayerUpdate = useCallback((layerId: string, updates: Partial<Layer>) => {
     if (editingComponentId) {
@@ -2064,37 +2064,6 @@ const CenterCanvas = React.memo(function CenterCanvas({
               title="Subscript"
             >
               <Icon name="subscript" className="size-3" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          {/* Lists */}
-          <ToggleGroup
-            type="multiple"
-            size="xs"
-            variant="secondary"
-            spacing={1}
-          >
-            <ToggleGroupItem
-              value="bulletList"
-              data-state={textEditorActiveMarks.bulletList ? 'on' : 'off'}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                toggleBulletList();
-              }}
-              title="Bullet List"
-            >
-              <Icon name="listUnordered" className="size-3" />
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              value="orderedList"
-              data-state={textEditorActiveMarks.orderedList ? 'on' : 'off'}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                toggleOrderedList();
-              }}
-              title="Numbered List"
-            >
-              <Icon name="listOrdered" className="size-3" />
             </ToggleGroupItem>
           </ToggleGroup>
 

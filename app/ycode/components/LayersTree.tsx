@@ -34,7 +34,8 @@ import { useAuthStore } from '@/stores/useAuthStore';
 // 6. Utils/lib
 import { cn } from '@/lib/utils';
 import { flattenTree, type FlattenedItem } from '@/lib/tree-utilities';
-import { canHaveChildren, getLayerIcon, getLayerName, getCollectionVariable, isTextContentLayer, isRichTextLayer, getRichTextSublayers, getTextStyleSublayers, canMoveLayer, updateLayerProps, filterDisabledSliderLayers } from '@/lib/layer-utils';
+import { canHaveChildren, getLayerIcon, getLayerName, getCollectionVariable, isTextContentLayer, isRichTextLayer, getRichTextSublayers, getTextStyleSublayers, canMoveLayer, updateLayerProps, filterDisabledSliderLayers, getLayerCmsFieldBinding, extractBlockText } from '@/lib/layer-utils';
+import { getBlockName } from '@/lib/templates/blocks';
 import { MULTI_ASSET_COLLECTION_ID } from '@/lib/collection-field-utils';
 import { hasStyleOverrides } from '@/lib/layer-style-utils';
 import { getUserInitials, getDisplayName } from '@/lib/collaboration-utils';
@@ -51,32 +52,8 @@ import type { UseLiveComponentUpdatesReturn } from '@/hooks/use-live-component-u
 import Icon from '@/components/ui/icon';
 
 /**
- * Extract plain text from Tiptap JSON content (for rich text layers)
- */
-function extractPlainTextFromTiptap(content: any): string {
-  if (!content) return '';
-
-  // If it's a string, return as-is
-  if (typeof content === 'string') return content;
-
-  // If it's an array, process each item
-  if (Array.isArray(content)) {
-    return content.map(extractPlainTextFromTiptap).join('');
-  }
-
-  // If it has text property, return it
-  if (content.text) return content.text;
-
-  // If it has content array, recursively extract
-  if (content.content) {
-    return extractPlainTextFromTiptap(content.content);
-  }
-
-  return '';
-}
-
-/**
- * Get display label for a layer - returns text content for text layers, otherwise layer name
+ * Get display label for a layer - returns text content for text layers, otherwise layer name.
+ * Uses extractBlockText (same function that powers RichText sublayer labels).
  */
 function getLayerDisplayLabel(
   layer: Layer,
@@ -87,33 +64,36 @@ function getLayerDisplayLabel(
   },
   breakpoint?: Breakpoint
 ): string {
-  // customName always takes priority (user-defined rename)
-  if (layer.customName) {
+  // For text content layers, skip customName early return if it matches the default block name
+  // so we can show actual text content instead
+  const isTextLayer = isTextContentLayer(layer) || isRichTextLayer(layer);
+  const hasUserRename = layer.customName && layer.customName !== (getBlockName(layer.name) || '');
+
+  if (hasUserRename) {
+    return layer.customName!;
+  }
+
+  if (!isTextLayer && layer.customName) {
     return layer.customName;
   }
 
-  // For text layers (heading, text, richText), show the actual text content
-  if ((isTextContentLayer(layer) || isRichTextLayer(layer)) && layer.variables?.text) {
-    const textVar = layer.variables.text as { type: string; data?: { content?: any } };
+  if (isTextLayer) {
+    const textVar = layer.variables?.text as { type: string; data?: { content?: unknown } } | undefined;
+    if (textVar) {
+      let textContent = '';
+      if (textVar.type === 'dynamic_rich_text' && textVar.data?.content) {
+        textContent = extractBlockText(textVar.data.content);
+      } else if ((textVar.type === 'dynamic_text' || textVar.type === 'static_text') && textVar.data?.content) {
+        textContent = String(textVar.data.content);
+      }
 
-    let textContent = '';
-    if (textVar.type === 'dynamic_rich_text' && textVar.data?.content) {
-      textContent = extractPlainTextFromTiptap(textVar.data.content);
-    } else if ((textVar.type === 'dynamic_text' || textVar.type === 'static_text') && textVar.data?.content) {
-      textContent = String(textVar.data.content);
-    }
-
-    // Trim and truncate long text, return if we have content
-    if (textContent) {
       const trimmed = textContent.trim();
       if (trimmed) {
-        // Truncate to ~30 chars for display
         return trimmed.length > 30 ? trimmed.slice(0, 30) + '...' : trimmed;
       }
     }
   }
 
-  // Fall back to regular layer name
   return getLayerName(layer, context, breakpoint);
 }
 
@@ -203,9 +183,7 @@ const LayerRow = React.memo(function LayerRow({
   const fieldsByCollectionId = useCollectionsStore((state) => state.fields);
 
   // Use selective subscriptions to avoid re-renders when unrelated state changes
-  const setActiveSublayerIndex = useEditorStore((state) => state.setActiveSublayerIndex);
-  const setActiveTextStyleKey = useEditorStore((state) => state.setActiveTextStyleKey);
-  const setActiveListItemIndex = useEditorStore((state) => state.setActiveListItemIndex);
+  const selectLayerWithSublayer = useEditorStore((state) => state.selectLayerWithSublayer);
   const editingComponentId = useEditorStore((state) => state.editingComponentId);
   const interactionTriggerLayerIds = useEditorStore((state) => state.interactionTriggerLayerIds);
   const interactionTargetLayerIds = useEditorStore((state) => state.interactionTargetLayerIds);
@@ -314,20 +292,25 @@ const LayerRow = React.memo(function LayerRow({
   // Sublayer rows (content blocks or text style targets)
   if (node.sublayer) {
     const handleSublayerClick = () => {
-      onSelect(node.layer.id);
       if (node.sublayer!.kind === 'content') {
-        setActiveSublayerIndex(node.index);
-        setActiveTextStyleKey(node.sublayer!.styleKey ?? null);
-        setActiveListItemIndex(null);
+        selectLayerWithSublayer(node.layer.id, {
+          textStyleKey: node.sublayer!.styleKey ?? null,
+          sublayerIndex: node.index,
+          listItemIndex: null,
+        });
       } else if (node.sublayer!.kind === 'listItem') {
         const parentBlockIdx = node.parentId?.match(/__sub_(\d+)$/)?.[1];
-        setActiveSublayerIndex(parentBlockIdx !== undefined ? parseInt(parentBlockIdx, 10) : node.index);
-        setActiveTextStyleKey('listItem');
-        setActiveListItemIndex(node.sublayer!.itemIndex ?? null);
+        selectLayerWithSublayer(node.layer.id, {
+          textStyleKey: 'listItem',
+          sublayerIndex: parentBlockIdx !== undefined ? parseInt(parentBlockIdx, 10) : node.index,
+          listItemIndex: node.sublayer!.itemIndex ?? null,
+        });
       } else {
-        setActiveSublayerIndex(null);
-        setActiveTextStyleKey(node.sublayer!.styleKey ?? null);
-        setActiveListItemIndex(null);
+        selectLayerWithSublayer(node.layer.id, {
+          textStyleKey: node.sublayer!.styleKey ?? null,
+          sublayerIndex: null,
+          listItemIndex: null,
+        });
       }
     };
 
@@ -806,7 +789,20 @@ export default function LayersTree({
   const { getComponentById } = useComponentsStore();
 
   // Get collections and fields from store
-  const { collections, fields: fieldsByCollectionId } = useCollectionsStore();
+  const { collections, fields: fieldsByCollectionId, items: collectionItems } = useCollectionsStore();
+
+  // CMS data for resolving rich text sublayers from actual CMS item content
+  const currentPageCollectionItemId = useEditorStore((state) => state.currentPageCollectionItemId);
+  const pages = usePagesStore((state) => state.pages);
+  const currentPage = useMemo(() => pages.find(p => p.id === pageId), [pages, pageId]);
+  const pageCollectionId = currentPage?.is_dynamic ? currentPage.settings?.cms?.collection_id ?? null : null;
+  const pageCollectionItemValues = useMemo(() => {
+    if (!pageCollectionId || !currentPageCollectionItemId) return null;
+    const items = collectionItems[pageCollectionId];
+    if (!items) return null;
+    const item = items.find(i => i.id === currentPageCollectionItemId);
+    return item?.values ?? null;
+  }, [pageCollectionId, currentPageCollectionItemId, collectionItems]);
 
   // Use prop or store state (prop takes precedence for compatibility)
   const selectedLayerIds = propSelectedLayerIds ?? storeSelectedLayerIds;
@@ -874,7 +870,13 @@ export default function LayersTree({
           // Content sublayers (TipTap blocks) for richText
           // Each content block may have inline mark children (bold, italic, etc.)
           if (isRichTextLayer(node.layer)) {
-            const contentSubs = getRichTextSublayers(node.layer);
+            let cmsContent: any = undefined;
+            const cmsBinding = getLayerCmsFieldBinding(node.layer);
+            if (cmsBinding && pageCollectionItemValues) {
+              const rawValue = pageCollectionItemValues[cmsBinding.field_id];
+              if (rawValue) cmsContent = rawValue;
+            }
+            const contentSubs = getRichTextSublayers(node.layer, cmsContent);
             contentSubs.forEach((sub) => {
               const contentSubId = `${node.id}__sub_${subIdx}`;
               const hasMarkChildren = sub.children && sub.children.length > 0;
@@ -934,7 +936,7 @@ export default function LayersTree({
 
       return withSublayers;
     },
-    [layers, collapsedIds, activeBreakpoint]
+    [layers, collapsedIds, activeBreakpoint, pageCollectionItemValues]
   );
 
   // Calculate which depth levels should be highlighted (selected containers)

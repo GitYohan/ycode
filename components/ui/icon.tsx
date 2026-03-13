@@ -15,7 +15,7 @@ export interface IconProps extends React.SVGProps<SVGSVGElement> {
     | 'select' | 'checkbox' | 'radio' | 'zap' | 'zap-outline' | 'loopAlternate' | 'loopRepeat' | 'globe' | 'ease-linear' | 'ease-in' | 'ease-in-out' | 'ease-out' | 'ease-back-in'
     | 'ease-back-in-out' | 'ease-back-out' | 'none' | 'play' | 'stop' | 'info' | 'preview' | 'linear' | 'radial' | 'color' | 'fill-image' | 'eyedrop' | 'calendar' | 'hash'
     | 'paintbrush' | 'swatch' | 'cube' | 'triangle-down' | 'triangle-right' | 'plus-circle' | 'plus-circle-solid' | 'detach' | 'email' | 'phone' | 'paperclip' | 'unlink' | 'map'
-    | 'droplet' | 'expand' | 'collapse' | 'filter' | 'crosshair'
+    | 'paragraph' | 'droplet' | 'expand' | 'collapse' | 'filter' | 'crosshair'
     | 'lightbox'
     | 'slider' | 'slide' | 'slides' | 'slide-button-prev' | 'slide-button-next' | 'slide-bullets' | 'slide-bullet' | 'slide-navigation' | 'slide-fraction'
     | 'loop-alternate' | 'loop-repeat'
@@ -596,6 +596,11 @@ const ICONS: Record<IconProps['name'], React.ReactNode> = {
   text: (
     <>
       <path d="M0,1 L0,0 L12,0 L12,1 L6.5,1 L6.5,12 L5.5,12 L5.5,1 L0,1 Z" />
+    </>
+  ),
+  paragraph: (
+    <>
+      <path d="M0,10 L6,10 L6,11 L0,11 L0,10 Z M0,1 L12,1 L12,2 L0,2 L0,1 Z M0,4 L12,4 L12,5 L0,5 L0,4 Z M0,7 L12,7 L12,8 L0,8 L0,7 Z" />
     </>
   ),
   layout: (

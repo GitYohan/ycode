@@ -90,7 +90,7 @@ import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, find
 import { detachSpecificLayerFromComponent } from '@/lib/component-utils';
 import { convertContentToValue, parseValueToContent } from '@/lib/cms-variables-utils';
 import { createTextComponentVariableValue } from '@/lib/variable-utils';
-import { getRichTextValue, extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
+import { getRichTextValue, extractPlainTextFromTiptap, getCmsFieldBinding } from '@/lib/tiptap-utils';
 import { DEFAULT_TEXT_STYLES, getTextStyle, getTiptapTextContent } from '@/lib/text-format-utils';
 import { buildFieldGroupsForLayer, getFieldIcon, isMultipleAssetField, MULTI_ASSET_COLLECTION_ID } from '@/lib/collection-field-utils';
 import { getInverseReferenceFields } from '@/lib/collection-utils';
@@ -1750,12 +1750,13 @@ const RightSidebar = React.memo(function RightSidebar({
         {/* Design tab */}
         <TabsContent value="design" className="flex-1 flex flex-col divide-y overflow-y-auto no-scrollbar data-[state=inactive]:hidden overflow-x-hidden mt-0">
 
-          {/* Layer Styles Panel - only show for default layer style and not in text style mode */}
-          {!showTextStyleControls && (
+          {/* Layer Styles Panel - hide in text style mode except for richText sublayers */}
+          {(!showTextStyleControls || (selectedLayer && isRichTextLayer(selectedLayer))) && (
             <LayerStylesPanel
               layer={selectedLayer}
               pageId={currentPageId}
               onLayerUpdate={handleLayerUpdate}
+              activeTextStyleKey={selectedLayer && isRichTextLayer(selectedLayer) ? activeTextStyleKey : null}
             />
           )}
 
@@ -2085,20 +2086,54 @@ const RightSidebar = React.memo(function RightSidebar({
                           allFields={fields}
                           collections={collections}
                         />
-                      ) : (
-                        <ExpandableRichTextEditor
-                          key={selectedLayerId}
-                          value={getContentValue(selectedLayer)}
-                          onChange={handleContentChange}
-                          placeholder="Enter text..."
-                          sheetDescription="Element content"
-                          fieldGroups={fieldGroups}
-                          allFields={fields}
-                          collections={collections}
-                          disabled={showTextStyleControls}
-                          buttonOnly={isRichTextLayer(selectedLayer)}
-                        />
-                      )}
+                      ) : (() => {
+                        const contentValue = getContentValue(selectedLayer);
+                        const cmsBinding = isRichTextLayer(selectedLayer) ? getCmsFieldBinding(contentValue) : null;
+
+                        if (cmsBinding) {
+                          return (
+                            <Button
+                              asChild
+                              variant="data"
+                              className="justify-between!"
+                            >
+                              <div>
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <Icon name="database" className="size-3 opacity-60 shrink-0" />
+                                  <span className="truncate">{cmsBinding.label || 'CMS Field'}</span>
+                                </span>
+                                <Button
+                                  className="size-4! p-0! shrink-0"
+                                  variant="outline"
+                                  onClick={() => {
+                                    handleContentChange({
+                                      type: 'doc',
+                                      content: [{ type: 'paragraph' }],
+                                    });
+                                  }}
+                                >
+                                  <Icon name="x" className="size-2" />
+                                </Button>
+                              </div>
+                            </Button>
+                          );
+                        }
+
+                        return (
+                          <ExpandableRichTextEditor
+                            key={selectedLayerId}
+                            value={contentValue}
+                            onChange={handleContentChange}
+                            placeholder="Enter text..."
+                            sheetDescription="Element content"
+                            fieldGroups={fieldGroups}
+                            allFields={fields}
+                            collections={collections}
+                            disabled={showTextStyleControls}
+                            buttonOnly={isRichTextLayer(selectedLayer)}
+                          />
+                        );
+                      })()}
                     </div>
                   </div>
                 </SettingsPanel>

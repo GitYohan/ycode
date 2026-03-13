@@ -9,6 +9,7 @@ import { getBlockIcon, getBlockName } from '@/lib/templates/blocks';
 import { isSliderLayerName } from '@/lib/templates/utilities';
 import { resolveInlineVariablesFromData } from '@/lib/inline-variables';
 import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
+import { getCmsFieldBinding } from '@/lib/tiptap-utils';
 import { applyComponentOverrides } from '@/lib/resolve-components';
 import { resolveFieldFromSources } from '@/lib/cms-variables-utils';
 import { parseMultiReferenceValue } from '@/lib/collection-utils';
@@ -474,7 +475,7 @@ export interface RichTextSublayer {
 }
 
 const SUBLAYER_ICON_MAP: Record<string, string> = {
-  paragraph: 'text',
+  paragraph: 'paragraph',
   heading: 'heading',
   bulletList: 'listUnordered',
   orderedList: 'listOrdered',
@@ -502,7 +503,7 @@ export function contentBlockToStyleKey(block: { type: string; attrs?: Record<str
 /**
  * Extract plain text from a TipTap block node (recursively walks content/text).
  */
-function extractBlockText(block: any): string {
+export function extractBlockText(block: any): string {
   if (!block) return '';
   if (typeof block === 'string') return block;
   if (block.text) return block.text;
@@ -536,12 +537,32 @@ function extractInlineMarks(block: any): string[] {
  * Extract content sublayer metadata from a richText layer's TipTap content.
  * Returns one entry per top-level block (paragraph, heading, list, etc.).
  * Each block includes inline mark children (bold, italic, etc.) found in its content.
+ *
+ * When a CMS field is bound, pass the resolved CMS content via `cmsContent`
+ * so sublayers reflect the actual CMS item data.
  */
-export function getRichTextSublayers(layer: Layer): RichTextSublayer[] {
+export function getRichTextSublayers(layer: Layer, cmsContent?: any): RichTextSublayer[] {
   const textVar = layer.variables?.text;
   if (textVar?.type !== 'dynamic_rich_text') return [];
-  const doc = (textVar.data as any)?.content;
-  if (!doc?.content || !Array.isArray(doc.content)) return [];
+  const layerDoc = (textVar.data as any)?.content;
+  if (!layerDoc?.content || !Array.isArray(layerDoc.content)) return [];
+
+  // When content is bound to a CMS field, use the resolved CMS content for sublayers
+  const binding = getCmsFieldBinding(layerDoc);
+  if (binding) {
+    let resolvedDoc = cmsContent;
+    if (typeof resolvedDoc === 'string') {
+      try { resolvedDoc = JSON.parse(resolvedDoc); } catch { resolvedDoc = null; }
+    }
+    if (!resolvedDoc?.content || !Array.isArray(resolvedDoc.content)) return [];
+    return buildSublayersFromDoc(resolvedDoc, layer);
+  }
+
+  return buildSublayersFromDoc(layerDoc, layer);
+}
+
+/** Build sublayer metadata from a Tiptap document's content blocks. */
+function buildSublayersFromDoc(doc: any, layer: Layer): RichTextSublayer[] {
 
   return doc.content
     .filter((block: any) => block.type !== 'paragraph' || block.content?.length)
@@ -612,7 +633,7 @@ export function getRichTextSublayers(layer: Layer): RichTextSublayer[] {
 }
 
 const STYLE_SUBLAYER_ICON_MAP: Record<string, string> = {
-  paragraph: 'text',
+  paragraph: 'paragraph',
   h1: 'heading',
   h2: 'heading',
   h3: 'heading',
@@ -1446,6 +1467,68 @@ export function hasSingleInlineVariable(layer: Layer): boolean {
   // Remove the variable tag and check if only whitespace remains
   const withoutVariable = content.replace(regex, '').trim();
   return withoutVariable === '';
+}
+
+export interface CmsFieldBindingInfo {
+  field_id: string;
+  source?: 'page' | 'collection';
+  collection_layer_id?: string;
+}
+
+/**
+ * Check if a layer has any CMS field binding across all variable slots
+ * (text, image, audio, video, backgroundImage, link, design colors).
+ * Returns the first binding found, or null if none.
+ */
+export function getLayerCmsFieldBinding(layer: Layer): CmsFieldBindingInfo | null {
+  const vars = layer.variables;
+  if (!vars) return null;
+
+  // Helper to extract binding info from a FieldVariable-shaped object
+  const extractBinding = (v: any): CmsFieldBindingInfo | null => {
+    if (v && typeof v === 'object' && v.type === 'field' && v.data?.field_id) {
+      return { field_id: v.data.field_id, source: v.data.source, collection_layer_id: v.data.collection_layer_id };
+    }
+    return null;
+  };
+
+  // Direct FieldVariable bindings on media / background / link
+  const directSlots = [vars.image?.src, vars.audio?.src, vars.video?.src, vars.video?.poster, vars.backgroundImage?.src, vars.link?.field];
+  for (const slot of directSlots) {
+    const b = extractBinding(slot);
+    if (b) return b;
+  }
+
+  // Tiptap rich text inline CMS variables
+  if (vars.text?.type === 'dynamic_rich_text') {
+    const b = getCmsFieldBinding(vars.text.data.content);
+    if (b) return b;
+  }
+
+  // Legacy dynamic_text inline variables
+  if (vars.text?.type === 'dynamic_text') {
+    const content = vars.text.data.content;
+    const match = content.match(/<ycode-inline-variable>([\s\S]*?)<\/ycode-inline-variable>/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        const b = extractBinding(parsed);
+        if (b) return b;
+      } catch { /* ignore parse errors */ }
+    }
+  }
+
+  // Design color field bindings
+  if (vars.design) {
+    for (const colorVar of Object.values(vars.design)) {
+      if (colorVar && typeof colorVar === 'object' && 'field' in colorVar) {
+        const b = extractBinding((colorVar as DesignColorVariable).field);
+        if (b) return b;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**

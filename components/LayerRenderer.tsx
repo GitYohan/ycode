@@ -11,7 +11,7 @@ import { useLocalisationStore } from '@/stores/useLocalisationStore';
 import type { Layer, Locale, ComponentVariable, FormSettings, LinkSettings, Breakpoint, CollectionItemWithValues, Component } from '@/types';
 import type { UseLiveLayerUpdatesReturn } from '@/hooks/use-live-layer-updates';
 import type { UseLiveComponentUpdatesReturn } from '@/hooks/use-live-component-updates';
-import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextEditable, isTextContentLayer, isRichTextLayer, getCollectionVariable, evaluateVisibility, findAncestorByName, filterDisabledSliderLayers } from '@/lib/layer-utils';
+import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextEditable, isTextContentLayer, isRichTextLayer, getCollectionVariable, evaluateVisibility, findAncestorByName, filterDisabledSliderLayers, getLayerCmsFieldBinding } from '@/lib/layer-utils';
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/templates/utilities';
 import { useCanvasSlider } from '@/hooks/use-canvas-slider';
 import { resolveFieldFromSources } from '@/lib/cms-variables-utils';
@@ -854,7 +854,7 @@ const LayerItem: React.FC<{
       if (valueToRender !== undefined) {
         // Value is typed as ComponentVariableValue - check if it's a text variable (has 'type' property)
         if ('type' in valueToRender && valueToRender.type === 'dynamic_rich_text') {
-          return renderRichText(valueToRender as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds);
+          return renderRichText(valueToRender as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, isSimpleTextLayer);
         }
         if ('type' in valueToRender && valueToRender.type === 'dynamic_text') {
           return (valueToRender as any).data.content;
@@ -871,7 +871,7 @@ const LayerItem: React.FC<{
       const variable = isSimpleTextLayer
         ? { ...textVariable, data: { ...textVariable.data, content: flattenTiptapParagraphs(textVariable.data.content) } }
         : textVariable;
-      return renderRichText(variable as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds);
+      return renderRichText(variable as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, isSimpleTextLayer);
     }
 
     // Check for inline variables in DynamicTextVariable format (legacy)
@@ -1730,6 +1730,29 @@ const LayerItem: React.FC<{
       elementProps.onDoubleClick = (e: React.MouseEvent) => {
         if (isLockedByOther) return;
         e.stopPropagation();
+
+        // Any element with CMS field binding: open collection item editor
+        const cmsBinding = getLayerCmsFieldBinding(layer);
+        if (cmsBinding) {
+          let targetCollectionId: string | null = null;
+          let targetItemId: string | undefined;
+
+          if (cmsBinding.source === 'collection' && cmsBinding.collection_layer_id && collectionItemId) {
+            const layerConfig = useCollectionLayerStore.getState().layerConfig;
+            targetCollectionId = layerConfig[cmsBinding.collection_layer_id]?.collectionId || null;
+            targetItemId = collectionItemId;
+          } else if (pageCollectionItemId) {
+            const currentPageId = useEditorStore.getState().currentPageId;
+            const currentPage = usePagesStore.getState().pages.find((p) => p.id === currentPageId);
+            targetCollectionId = currentPage?.settings?.cms?.collection_id || null;
+            targetItemId = pageCollectionItemId;
+          }
+
+          if (targetCollectionId && targetItemId) {
+            useEditorStore.getState().openCollectionItemSheet(targetCollectionId, targetItemId);
+            return;
+          }
+        }
 
         // Image layers: open file manager for quick image replacement
         if (layer.name === 'image' || htmlTag === 'img') {

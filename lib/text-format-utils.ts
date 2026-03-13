@@ -768,11 +768,15 @@ function renderBlock(
 
   if (block.type === 'paragraph') {
     const paragraphClass = getTextStyleClasses(textStyles, 'paragraph');
+    const paragraphProps: Record<string, any> = { key, className: paragraphClass };
+    if (isEditMode) {
+      paragraphProps['data-style'] = 'paragraph';
+    }
 
     // Empty paragraphs use non-breaking space to preserve the empty line
     if (!block.content || block.content.length === 0) {
       const emptyTag = useSpanForParagraphs ? 'span' : 'p';
-      return React.createElement(emptyTag, { key, className: paragraphClass }, '\u00A0');
+      return React.createElement(emptyTag, paragraphProps, '\u00A0');
     }
 
     // Use div when paragraph contains block-level content (rich_text variables or embedded components)
@@ -782,7 +786,7 @@ function renderBlock(
     );
     const tag = hasBlockContent ? 'div' : useSpanForParagraphs ? 'span' : 'p';
 
-    return React.createElement(tag, { key, className: paragraphClass }, ...renderInlineContent(block.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds));
+    return React.createElement(tag, paragraphProps, ...renderInlineContent(block.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds));
   }
 
   if (block.type === 'heading') {
@@ -981,6 +985,7 @@ export function renderRichText(
   components?: Component[],
   renderComponentBlock?: RenderComponentBlockFn,
   ancestorComponentIds?: Set<string>,
+  isSimpleTextElement = false,
 ): React.ReactNode {
   const content = variable.data.content;
 
@@ -998,9 +1003,19 @@ export function renderRichText(
   if (doc.content.length === 1 && doc.content[0].type === 'paragraph') {
     const paragraph = doc.content[0];
     if (!paragraph.content || paragraph.content.length === 0) {
+      if (isEditMode && !isSimpleTextElement) {
+        const paragraphClass = textStyles?.paragraph?.classes ?? DEFAULT_TEXT_STYLES.paragraph?.classes ?? '';
+        return React.createElement('span', { 'data-style': 'paragraph', 'data-block-index': 0, className: paragraphClass }, '\u00A0');
+      }
       return null;
     }
-    return renderInlineContent(paragraph.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
+    const inlineContent = renderInlineContent(paragraph.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
+    if (isEditMode && !isSimpleTextElement) {
+      const paragraphClass = textStyles?.paragraph?.classes ?? DEFAULT_TEXT_STYLES.paragraph?.classes ?? '';
+      const children = Array.isArray(inlineContent) ? inlineContent : [inlineContent];
+      return React.createElement('span', { 'data-style': 'paragraph', 'data-block-index': 0, className: paragraphClass }, ...children);
+    }
+    return inlineContent;
   }
 
   let visibleBlockIdx = 0;
