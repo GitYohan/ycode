@@ -381,135 +381,208 @@ All changes are drafts until published:
 
 ---
 
-## Design Guide: How to Create Beautiful Websites
+## How to Build Pages — Step by Step
 
-### Typography
+### CRITICAL: Use Pre-Built Layouts First
 
-Create hierarchy through contrast:
-- **Page heading**: fontSize "48px"-"64px", fontWeight "700", lineHeight "1.05"-"1.1", letterSpacing "-0.03em"
-- **Section heading**: fontSize "32px"-"40px", fontWeight "600"-"700", lineHeight "1.15"-"1.2"
-- **Subheading**: fontSize "20px"-"24px", fontWeight "500"-"600", lineHeight "1.3"
-- **Body text**: fontSize "16px"-"18px", fontWeight "400", lineHeight "1.6"-"1.8"
-- **Small/caption**: fontSize "13px"-"14px", fontWeight "400"-"500", lineHeight "1.4"
+YCode has 48 professionally designed layout templates. **ALWAYS use these instead of building from scratch.**
 
-Recommended font pairings (set via fontFamily):
-- "Playfair Display" (headings) + "DM Sans" (body) — Editorial/elegant
-- "Sora" (headings) + "Plus Jakarta Sans" (body) — Modern/clean
-- "Fraunces" (headings) + "Outfit" (body) — Distinctive/warm
-- "Cabinet Grotesk" (headings) + "Satoshi" (body) — Bold/geometric
-- "DM Serif Display" (headings) + "DM Sans" (body) — Classic/refined
-
-### Spacing
-
-Generous spacing creates a premium feel:
-- **Section padding**: paddingTop "80px"-"140px", paddingBottom "80px"-"140px"
-- **Container**: maxWidth "1280px", paddingLeft "32px", paddingRight "32px"
-- **Content gap**: gap "16px"-"24px" for tight groups, "48px"-"96px" between sections
-- **Card padding**: padding "24px"-"48px"
-
-### Color Strategy
-
-Pick ONE dominant approach with a sharp accent:
-
-**Dark theme** (premium/modern):
-- Background: "#0a0a0a" or "#111111"
-- Primary text: "#ffffff" or "#f5f5f5"
-- Secondary text: "#a3a3a3"
-- Accent: one bright color ("#3b82f6", "#8b5cf6", "#10b981")
-
-**Light theme** (clean/minimal):
-- Background: "#ffffff" or "#fafafa"
-- Primary text: "#0a0a0a" or "#171717"
-- Secondary text: "#737373"
-- Subtle text: "#a3a3a3"
-- Accent: one strong color
-
-**Neutral cards**: backgroundColor "#f5f5f5" on light bg, "#1a1a1a" on dark bg
-
-### Layout Patterns
-
-**Hero section**:
 \`\`\`
-section: pt-140px, pb-80px, flex-col, items-center
-  container: max-w-1280px, w-100%, px-32px
-    content: flex-col, items-center, gap-24px, max-w-720px
-      heading: 64px, font-700, leading-1.05, tracking--0.03em, text-center
-      paragraph: 18px, leading-1.7, color-#737373, text-center, max-w-560px
-      button-row: flex-row, gap-12px
+1. list_layouts()           → see all available templates by category
+2. add_layout({ key: "hero-002", page_id: "...", parent_layer_id: "body" })
+3. add_layout({ key: "features-001", page_id: "...", parent_layer_id: "body" })
+4. add_layout({ key: "footer-001", page_id: "...", parent_layer_id: "body" })
 \`\`\`
 
-**Feature cards (3 columns)**:
+**Available categories:** Hero (5), Header (4), Features (12), Blog (6), Blog Header (4), Stats (3), Pricing (1), Team (2), Testimonials (5), FAQ (1), Navigation (2), Footer (3)
+
+After adding layouts, customize the text content and images. This produces better results than building from scratch.
+
+### Page Building Workflow
+
+1. **Plan**: Decide which sections the page needs (header, hero, features, CTA, footer)
+2. **Add layouts**: Use \`add_layout\` for each section — this gives you a well-structured, well-designed starting point
+3. **Customize content**: Update text, upload and set images, configure links
+4. **Verify structure**: Call \`get_layers\` to confirm the tree looks correct
+5. **Refine design**: Adjust colors, typography, spacing to match the desired style
+6. **Add hover states**: Add subtle hover effects on buttons and interactive elements
+7. **Publish**: Use \`publish\` to make changes live
+
+### When to Build from Scratch
+
+Only use \`batch_operations\` to build sections manually when:
+- No layout template matches the design
+- You need a highly custom or unique layout
+- The user specifically requests custom structure
+
+When building manually, **always follow the mandatory structure**.
+
+### Mandatory Structure: section → container → content
+
+EVERY section on a page MUST follow this nesting pattern:
+
 \`\`\`
-section: py-80px, flex-col, items-center
-  container: max-w-1280px, w-100%, px-32px
-    heading: 36px, font-600, text-center, mb-48px
-    grid: display-grid, grid-cols-[1fr 1fr 1fr], gap-32px
-      card: flex-col, gap-16px, p-32px, bg-#f5f5f5, rounded-16px
-        icon: 48px x 48px
-        title: 20px, font-600
-        description: 16px, color-#737373, leading-1.6
+section (full-width, padding top/bottom)
+  └─ div (container: maxWidth 1280px, width 100%, paddingLeft/Right 32px)
+       └─ content layers (headings, text, grids, cards, etc.)
 \`\`\`
 
-**CTA section**:
-\`\`\`
-section: py-80px, bg-#0a0a0a, flex-col, items-center
-  container: max-w-720px, text-center
-    heading: 36px, font-700, color-#ffffff
-    paragraph: 18px, color-#a3a3a3, mt-16px
-    button: mt-32px, bg-#ffffff, color-#0a0a0a, px-24px, py-12px, rounded-12px
-\`\`\`
+This is the ONLY correct way to structure page sections. The container constrains content width and adds horizontal padding.
 
-### Responsive Strategy
-
-Design desktop first, then adjust for smaller screens:
-- **Desktop** (default): Multi-column grids, full typography
-- **Tablet** (breakpoint: tablet): Reduce columns (3->2), reduce padding (80px->60px)
-- **Mobile** (breakpoint: mobile): Single column, reduce font sizes (48px->32px), reduce padding (60px->40px)
-
-### Subtle Details That Matter
-
-- **Borders**: Use "1px solid rgba(0,0,0,0.06)" for subtle separation on light backgrounds
-- **Border radius**: "12px" or "16px" for modern cards, "9999px" for pills, "0" for editorial
-- **Shadows**: "0 1px 2px rgba(0,0,0,0.05)" for cards, "0 20px 60px rgba(0,0,0,0.1)" for floating elements
-- **Opacity for hierarchy**: Secondary text at color "#737373", tertiary at "#a3a3a3"
-- **Hover states**: Subtle scale, shadow increase, or color shift
-
-### Reusable Styles
-
-Create styles to avoid repeating design properties:
-1. Use \`create_style\` to define a reusable style (e.g. "Card", "Button Primary")
-2. Use \`apply_style\` or \`batch_operations\` with apply_style to attach it to layers
-3. All layers sharing a style update together — just like CSS classes
-
-### Batch Operations (RECOMMENDED)
-
-Use \`batch_operations\` whenever building more than 2-3 layers. It fetches
-the layer tree once, applies all operations, then saves once — 5-10x faster.
-
-Key feature: use \`ref_id\` in add_layer operations, then reference that ID
-in later operations within the same batch:
+### Complete Example: Building a Section from Scratch
 
 \`\`\`
 batch_operations({
   page_id: "...",
   operations: [
-    { type: "add_layer", parent_layer_id: "body", template: "section", ref_id: "hero" },
-    { type: "add_layer", parent_layer_id: "hero", template: "heading", ref_id: "title" },
-    { type: "update_design", layer_id: "title", design: { typography: { isActive: true, fontSize: "56px" } } }
+    // 1. Section wrapper
+    { type: "add_layer", parent_layer_id: "body", template: "section", ref_id: "hero",
+      design: {
+        layout: { isActive: true, display: "Flex", flexDirection: "column", alignItems: "center" },
+        spacing: { isActive: true, paddingTop: "120px", paddingBottom: "80px" }
+      }
+    },
+    // 2. Container (MANDATORY — constrains content width)
+    { type: "add_layer", parent_layer_id: "hero", template: "div", ref_id: "container",
+      custom_name: "Container",
+      design: {
+        layout: { isActive: true, display: "Flex", flexDirection: "column", alignItems: "center" },
+        sizing: { isActive: true, width: "100%", maxWidth: "1280px" },
+        spacing: { isActive: true, paddingLeft: "32px", paddingRight: "32px" }
+      }
+    },
+    // 3. Content wrapper (centers and constrains text)
+    { type: "add_layer", parent_layer_id: "container", template: "div", ref_id: "content",
+      custom_name: "Content",
+      design: {
+        layout: { isActive: true, display: "Flex", flexDirection: "column", alignItems: "center", gap: "24px" },
+        sizing: { isActive: true, maxWidth: "720px" }
+      }
+    },
+    // 4. Heading
+    { type: "add_layer", parent_layer_id: "content", template: "heading", ref_id: "title",
+      text_content: "Build something amazing" },
+    { type: "update_design", layer_id: "title",
+      design: {
+        typography: { isActive: true, fontSize: "56px", fontWeight: "700", lineHeight: "1.05", letterSpacing: "-0.03em", textAlign: "center" }
+      }
+    },
+    // 5. Paragraph
+    { type: "add_layer", parent_layer_id: "content", template: "text", ref_id: "subtitle",
+      text_content: "A short description that explains the value proposition clearly and concisely." },
+    { type: "update_design", layer_id: "subtitle",
+      design: {
+        typography: { isActive: true, fontSize: "18px", lineHeight: "1.7", color: "#737373", textAlign: "center" },
+        sizing: { isActive: true, maxWidth: "560px" }
+      }
+    },
+    // 6. Button row
+    { type: "add_layer", parent_layer_id: "content", template: "div", ref_id: "buttons",
+      custom_name: "Buttons",
+      design: {
+        layout: { isActive: true, display: "Flex", flexDirection: "row", gap: "12px" }
+      }
+    },
+    // 7. Primary button
+    { type: "add_layer", parent_layer_id: "buttons", template: "button", ref_id: "cta",
+      text_content: "Get Started" },
+    { type: "update_design", layer_id: "cta",
+      design: {
+        typography: { isActive: true, fontWeight: "500" },
+        spacing: { isActive: true, paddingTop: "12px", paddingBottom: "12px", paddingLeft: "24px", paddingRight: "24px" },
+        backgrounds: { isActive: true, backgroundColor: "#171717" },
+        borders: { isActive: true, borderRadius: "8px" }
+      }
+    }
   ]
 })
 \`\`\`
 
-You can also set design inline with add_layer (via the design field) to further reduce operations.
+### Verify After Building
 
-### Workflow
+After building any section, call \`get_layers\` and check:
+1. Every section has a container div child with maxWidth "1280px"
+2. Text elements have typography design (fontSize, fontWeight, lineHeight)
+3. No content sits directly in a section without a container
+4. Flex containers have flexDirection set
+5. Interactive elements have appropriate spacing (padding on buttons, gap on rows)
 
-1. **Plan**: Decide on sections needed (hero, features, CTA, footer)
-2. **Define styles**: Create reusable styles for cards, buttons, headings
-3. **Build with batch**: Use batch_operations to build each section
-4. **Add content**: Set text content and upload images
-5. **Refine**: Adjust spacing, add borders/shadows, fine-tune typography
-6. **Publish**: Use publish to make changes live
+### Common Mistakes to AVOID
+
+- **NEVER** put text/heading/image directly inside a section — always wrap in a container div
+- **NEVER** leave text without typography design — always set fontSize, fontWeight, lineHeight
+- **NEVER** use a flat list of elements in body — always group into sections
+- **NEVER** forget to set \`isActive: true\` on design categories — properties won't apply without it
+- **NEVER** set just width without maxWidth on containers — content will be too wide on large screens
+- **NEVER** use only padding for spacing between sibling elements — use gap on the parent flex container
+- **NEVER** create more than 4-5 different font sizes on a page — maintain typographic hierarchy
+- **NEVER** skip the container pattern even for full-width background sections — the section handles the background, the container constrains the content
+
+### Typography Rules
+
+Limit to 4-5 sizes per page for clean hierarchy:
+- **Hero heading**: fontSize "48px"-"64px", fontWeight "700", lineHeight "1.05", letterSpacing "-0.03em"
+- **Section heading**: fontSize "32px"-"40px", fontWeight "600", lineHeight "1.2"
+- **Card title / Subheading**: fontSize "20px"-"24px", fontWeight "600", lineHeight "1.3"
+- **Body text**: fontSize "16px"-"18px", fontWeight "400", lineHeight "1.6"
+- **Small text / Caption**: fontSize "14px", fontWeight "400"-"500", lineHeight "1.4"
+
+ALWAYS set lineHeight and fontWeight — never leave text with only fontSize.
+
+Font pairings (use \`search_google_fonts\` + \`add_font\` first):
+- "Playfair Display" + "DM Sans" — Editorial/elegant
+- "Sora" + "Plus Jakarta Sans" — Modern/clean
+- "DM Serif Display" + "DM Sans" — Classic/refined
+
+### Spacing Rules
+
+Be generous — tight spacing looks amateur:
+- **Section padding**: paddingTop "80px"-"140px", paddingBottom "80px"-"140px"
+- **Container**: maxWidth "1280px", paddingLeft "32px", paddingRight "32px"
+- **Between groups**: gap "48px"-"96px" (sections within a page)
+- **Within groups**: gap "16px"-"24px" (items in a card, button row)
+- **Card padding**: padding "24px"-"48px" on all sides
+
+### Color Rules
+
+Pick ONE cohesive palette. Don't mix random colors.
+
+**Light theme**: bg "#ffffff", text "#171717", secondary "#737373", accent one strong color
+**Dark theme**: bg "#0a0a0a", text "#ffffff", secondary "#a3a3a3", accent one bright color
+**Cards on light bg**: backgroundColor "#f5f5f5" or "#f9fafb"
+**Cards on dark bg**: backgroundColor "#1a1a1a" or "#18181b"
+
+### Design Details
+
+- **Border radius**: "12px" or "16px" for cards, "8px" for buttons, "9999px" for pills
+- **Shadows on cards**: boxShadow "0 1px 3px rgba(0,0,0,0.08)"
+- **Subtle borders**: borderWidth "1px", borderColor "rgba(0,0,0,0.06)"
+- **Button hover**: Use ui_state "hover" to darken background or add shadow
+- **Image aspect ratios**: Use aspectRatio "16/9" or "3/2" with objectFit "cover"
+
+### Batch Operations
+
+Use \`batch_operations\` whenever building more than 2-3 layers. It fetches
+the layer tree once, applies all operations, then saves once — much faster.
+
+Key feature: use \`ref_id\` in add_layer operations, then reference that ID
+in later operations within the same batch.
+
+You can also set design inline with add_layer (via the design field) to reduce the number of operations.
+
+### Responsive Strategy
+
+Design desktop first, then adjust for smaller screens:
+- **Desktop** (default): Multi-column grids, full typography
+- **Tablet** (breakpoint: tablet): Reduce columns (3→2), reduce padding (80px→60px)
+- **Mobile** (breakpoint: mobile): Single column, reduce font sizes (48px→32px), reduce padding (60px→40px)
+
+### Reusable Styles
+
+When building multiple similar elements (cards, buttons), create styles first:
+1. \`create_style\` to define the design once
+2. \`apply_style\` to apply it to each element
+3. Updating the style later updates all elements using it
 
 ### Asset Management
 
