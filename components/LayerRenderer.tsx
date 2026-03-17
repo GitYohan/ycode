@@ -112,8 +112,8 @@ interface LayerRendererProps {
   isPreview?: boolean; // Whether we're in preview mode (prefix links with /ycode/preview)
   translations?: Record<string, any> | null; // Translations for localized URL generation
   anchorMap?: Record<string, string>; // Pre-built map of layerId -> anchor value for O(1) lookups
-  /** Pre-resolved asset URLs (asset_id -> public_url) for SSR link resolution */
-  resolvedAssets?: Record<string, string>;
+  /** Pre-resolved assets (asset_id -> { url, width, height }) for SSR resolution */
+  resolvedAssets?: Record<string, { url: string; width?: number | null; height?: number | null }>;
   /** Components for resolving embedded component nodes in rich-text (preview/published) */
   components?: Component[];
   /** Component IDs in the rendering chain, used to prevent circular loops through collection rich-text data */
@@ -354,7 +354,7 @@ const LayerItem: React.FC<{
   isPreview?: boolean; // Whether we're in preview mode
   translations?: Record<string, any> | null; // Translations for localized URL generation
   anchorMap?: Record<string, string>; // Pre-built map of layerId -> anchor value
-  resolvedAssets?: Record<string, string>;
+  resolvedAssets?: Record<string, { url: string; width?: number | null; height?: number | null }>;
   components?: Component[];
   ancestorComponentIds?: Set<string>;
 }> = ({
@@ -442,16 +442,13 @@ const LayerItem: React.FC<{
 
   // Create asset resolver that checks pre-resolved assets first (SSR), then falls back to store
   const getAsset = useCallback((id: string) => {
-    // Check pre-resolved assets from server first
     if (resolvedAssets?.[id]) {
-      const value = resolvedAssets[id];
-      // Inline SVG content (starts with <) — return as content, no public URL
-      if (value.startsWith('<')) {
-        return { public_url: null, content: value };
+      const { url, width, height } = resolvedAssets[id];
+      if (url.startsWith('<')) {
+        return { public_url: null, content: url };
       }
-      return { public_url: value };
+      return { public_url: url, width, height };
     }
-    // Fall back to store (may trigger async fetch)
     return getAssetFromStore(id);
   }, [resolvedAssets, getAssetFromStore]);
   const openFileManager = useEditorStore((state) => state.openFileManager);
@@ -1900,8 +1897,31 @@ const LayerItem: React.FC<{
       // Use default image if URL is empty or invalid
       const finalImageUrl = imageUrl && imageUrl.trim() !== '' ? imageUrl : DEFAULT_ASSETS.IMAGE;
 
-      // Generate optimized src and srcset for responsive images
-      const optimizedSrc = getOptimizedImageUrl(finalImageUrl, 1920, 1920, 85);
+      // Resolve intrinsic dimensions: explicit attributes > asset record > URL reverse-lookup
+      let imgWidth = layer.attributes?.width as string | undefined;
+      let imgHeight = layer.attributes?.height as string | undefined;
+
+      if (!imgWidth || !imgHeight) {
+        const assetId = isAssetVariable(imageVariable) ? getAssetId(imageVariable) : undefined;
+        const asset = assetId ? getAsset(assetId) : undefined;
+        if (asset && 'width' in asset && asset.width && !imgWidth) imgWidth = String(asset.width);
+        if (asset && 'height' in asset && asset.height && !imgHeight) imgHeight = String(asset.height);
+
+        // CMS images: field variable resolved to a URL — reverse-lookup asset by matching URL
+        if ((!imgWidth || !imgHeight) && resolvedAssets && imageUrl) {
+          for (const entry of Object.values(resolvedAssets)) {
+            if (entry.url === imageUrl) {
+              if (!imgWidth && entry.width) imgWidth = String(entry.width);
+              if (!imgHeight && entry.height) imgHeight = String(entry.height);
+              break;
+            }
+          }
+        }
+      }
+
+      const imgLoading = layer.attributes?.loading as string | undefined;
+
+      const optimizedSrc = getOptimizedImageUrl(finalImageUrl, 1920, 85);
       const srcset = generateImageSrcset(finalImageUrl);
       const sizes = getImageSizes();
 
@@ -1910,6 +1930,10 @@ const LayerItem: React.FC<{
         alt: imageAlt,
         src: optimizedSrc,
       };
+
+      if (imgWidth) imageProps.width = imgWidth;
+      if (imgHeight) imageProps.height = imgHeight;
+      if (imgLoading) imageProps.loading = imgLoading;
 
       if (srcset) {
         imageProps.srcSet = srcset;
