@@ -32,10 +32,6 @@ interface SelectionOverlayProps {
   activeListItemIndex?: number | null;
 }
 
-const SELECTED_OUTLINE_CLASS = 'outline outline-1 outline-blue-500';
-const HOVERED_OUTLINE_CLASS = 'outline outline-1 outline-blue-400/50';
-const PARENT_OUTLINE_CLASS = 'outline outline-1 outline-dashed outline-blue-400';
-
 export function SelectionOverlay({
   iframeElement,
   containerElement,
@@ -46,6 +42,18 @@ export function SelectionOverlay({
   activeSublayerIndex,
   activeListItemIndex,
 }: SelectionOverlayProps) {
+  const activeUIState = useEditorStore((state) => state.activeUIState);
+  const isStateActive = activeUIState !== 'neutral';
+
+  const SELECTED_OUTLINE_CLASS = isStateActive
+    ? 'outline outline-1 outline-[#8dd92f]'
+    : 'outline outline-1 outline-blue-500';
+  const HOVERED_OUTLINE_CLASS = isStateActive
+    ? 'outline outline-1 outline-[#8dd92f]/50'
+    : 'outline outline-1 outline-blue-400/50';
+  const PARENT_OUTLINE_CLASS = isStateActive
+    ? 'outline outline-1 outline-dashed outline-[#8dd92f]'
+    : 'outline outline-1 outline-dashed outline-blue-400';
   // Container refs for outline groups (supports multiple instances per layer ID)
   const selectedContainerRef = useRef<HTMLDivElement>(null);
   const hoveredContainerRef = useRef<HTMLDivElement>(null);
@@ -120,6 +128,7 @@ export function SelectionOverlay({
       const width = elementRect.width * scale;
       const height = elementRect.height * scale;
 
+      child.className = `absolute ${outlineClass}`;
       child.style.display = 'block';
       child.style.top = `${top}px`;
       child.style.left = `${left}px`;
@@ -285,6 +294,7 @@ export function SelectionOverlay({
 
   // Hide outlines during slider transitions
   const isSliderAnimating = useEditorStore((state) => state.isSliderAnimating);
+  const isCanvasContextMenuOpen = useEditorStore((state) => state.isCanvasContextMenuOpen);
 
   useEffect(() => {
     isSliderAnimatingRef.current = isSliderAnimating;
@@ -296,7 +306,10 @@ export function SelectionOverlay({
   }, [isSliderAnimating, updateAllOutlines, hideAllOutlines]);
 
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden z-40">
+    <div
+      className="absolute inset-0 pointer-events-none overflow-hidden z-40"
+      style={isCanvasContextMenuOpen ? { display: 'none' } : undefined}
+    >
       {/* Parent outline container (dashed) - visible during drag */}
       <div ref={parentContainerRef} style={{ display: 'none' }} />
 

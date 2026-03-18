@@ -264,22 +264,16 @@ function isTransformableUrl(url: string): boolean {
 }
 
 /**
- * Generate optimized thumbnail URL for faster loading
- * Adds image transformation parameters for Supabase Storage URLs to reduce file size
+ * Generate optimized image URL with width and quality constraints.
+ * Aspect ratio is preserved by the image service — only width caps the output.
  * @param url - Original image URL
- * @param width - Target width in pixels (default: 200)
- * @param height - Target height in pixels (default: 200)
+ * @param width - Max width in pixels (default: 200)
  * @param quality - Image quality 0-100 (default: 80)
- * @returns Optimized URL with transformation parameters or original URL if not a Supabase Storage URL
- *
- * @example
- * getOptimizedImageUrl('https://supabase.co/storage/v1/object/public/assets/image.jpg')
- * // Returns: 'https://supabase.co/storage/v1/object/public/assets/image.jpg?width=200&height=200&resize=cover&quality=80'
+ * @returns Optimized URL with transformation parameters or original URL if not transformable
  */
 export function getOptimizedImageUrl(
   url: string,
   width: number = 200,
-  height: number = 200,
   quality: number = 80
 ): string {
   if (!isTransformableUrl(url)) return url;
@@ -287,13 +281,11 @@ export function getOptimizedImageUrl(
   try {
     if (isProxyUrl(url)) {
       const separator = url.includes('?') ? '&' : '?';
-      return `${url}${separator}width=${width}&height=${height}&quality=${quality}`;
+      return `${url}${separator}width=${width}&quality=${quality}`;
     }
 
     const urlObj = new URL(url);
     urlObj.searchParams.set('width', width.toString());
-    urlObj.searchParams.set('height', height.toString());
-    urlObj.searchParams.set('resize', 'cover');
     urlObj.searchParams.set('quality', quality.toString());
     return urlObj.toString();
   } catch {
@@ -342,19 +334,8 @@ export function generateImageSrcset(
   }
 }
 
-/**
- * Get responsive sizes attribute for images
- * Provides default sizes based on common viewport breakpoints
- * @param customSizes - Optional custom sizes string (e.g., "(max-width: 768px) 100vw, 50vw")
- * @returns Sizes attribute string
- *
- * @example
- * getImageSizes() // Returns: "100vw"
- */
-export function getImageSizes(customSizes?: string): string {
-  if (customSizes) {
-    return customSizes;
-  }
+/** Returns the default responsive sizes attribute. */
+export function getImageSizes(): string {
   return '100vw';
 }
 
@@ -469,9 +450,12 @@ export function collectLayerAssetIds(
     }
   };
 
-  /** Scan rich-text marks for asset links. */
+  /** Scan rich-text marks for asset links and richTextImage nodes for asset IDs. */
   const scanRichTextMarks = (node: any): void => {
     if (!node || typeof node !== 'object') return;
+    if (node.type === 'richTextImage' && node.attrs?.assetId) {
+      addAssetId(node.attrs.assetId);
+    }
     if (Array.isArray(node.marks)) {
       for (const mark of node.marks) {
         if (mark.type === 'richTextLink') {
@@ -545,6 +529,10 @@ export function collectLayerAssetIds(
       for (const value of Object.values(layer._collectionItemValues)) {
         if (typeof value === 'string' && isValidUUID(value)) {
           assetIds.add(value);
+        }
+        // Scan rich_text values (Tiptap JSON) for embedded image assets
+        if (value && typeof value === 'object' && (value as any).type === 'doc') {
+          scanRichTextMarks(value);
         }
       }
     }

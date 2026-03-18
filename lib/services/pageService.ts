@@ -363,23 +363,28 @@ export async function publishPages(pageIds: string[]): Promise<PublishPagesResul
 
   // Step 8a: Remove published pages that would violate slug+folder+error_page unique
   // constraint (same slug/folder/error_page but different id – e.g. replaced/renamed page).
+  // Dynamic pages are excluded because the DB unique index skips them (is_dynamic = false)
+  // and they legitimately share the same '*' slug within a folder.
   const publishedPageIdsDeletedInStep8a = new Set<string>();
 
-  if (pagesToUpsert.length > 0) {
+  const nonDynamicPagesToUpsert = pagesToUpsert.filter((p) => !p.is_dynamic);
+
+  if (nonDynamicPagesToUpsert.length > 0) {
     const slugKey = (p: { slug: string; page_folder_id: string | null; error_page: number | null }) =>
       `${p.slug}\t${p.page_folder_id ?? ''}\t${p.error_page ?? 0}`;
 
     // Map from slug key -> id that will occupy that slot after upsert
     const upsertKeyToId = new Map<string, string>();
-    for (const p of pagesToUpsert) {
+    for (const p of nonDynamicPagesToUpsert) {
       upsertKeyToId.set(slugKey(p), p.id);
     }
 
-    const slugsToCheck = [...new Set(pagesToUpsert.map((p) => p.slug))];
+    const slugsToCheck = [...new Set(nonDynamicPagesToUpsert.map((p) => p.slug))];
     const { data: conflictingPublished } = await client
       .from('pages')
       .select('id, slug, page_folder_id, error_page')
       .eq('is_published', true)
+      .eq('is_dynamic', false)
       .is('deleted_at', null)
       .in('slug', slugsToCheck);
 
