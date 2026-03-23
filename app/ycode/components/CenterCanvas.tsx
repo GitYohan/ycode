@@ -627,7 +627,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
   const referencedItems = useCollectionLayerStore((state) => state.referencedItems);
   const fetchReferencedCollectionItems = useCollectionLayerStore((state) => state.fetchReferencedCollectionItems);
 
-  const { routeType, urlState, navigateToLayers, navigateToPage, navigateToPageEdit, updateQueryParams } = useEditorUrl();
+  const { urlState, navigateToLayers, navigateToPage, navigateToPageEdit, updateQueryParams } = useEditorUrl();
   const components = useComponentsStore((state) => state.components);
   const componentDrafts = useComponentsStore((state) => state.componentDrafts);
   const [collectionItems, setCollectionItems] = useState<Array<{ id: string; label: string }>>([]);
@@ -1576,28 +1576,20 @@ const CenterCanvas = React.memo(function CenterCanvas({
 
   // Handle page selection
   const handlePageSelect = useCallback((pageId: string) => {
-    // Clear selection FIRST to release locks on the current page's channel
-    // before switching to the new page's channel
-    setSelectedLayerId(null);
+    if (pageId === currentPageId) return;
 
-    // Set the page ID immediately for responsive UI
-    // The URL effect in YCodeBuilderMain uses a ref to track when we're navigating
-    // to prevent reverting to the old page before the URL updates
+    // Set to body directly so the layer sync effect won't trigger a second URL update
+    setSelectedLayerId('body');
     setCurrentPageId(pageId);
 
-    // Navigate to the same route type but with the new page ID
-    // IMPORTANT: Explicitly pass 'body' as the layer to avoid carrying over invalid layer IDs from the old page
-    if (routeType === 'layers') {
-      navigateToLayers(pageId, undefined, undefined, 'body');
-    } else if (routeType === 'page' && urlState.isEditing) {
+    if (urlState.isEditing) {
       navigateToPageEdit(pageId);
-    } else if (routeType === 'page') {
+    } else if (activeSidebarTab === 'pages') {
       navigateToPage(pageId, undefined, undefined, 'body');
     } else {
-      // Default to layers if no route type
       navigateToLayers(pageId, undefined, undefined, 'body');
     }
-  }, [setSelectedLayerId, setCurrentPageId, routeType, urlState.isEditing, navigateToLayers, navigateToPage, navigateToPageEdit]);
+  }, [currentPageId, setSelectedLayerId, setCurrentPageId, activeSidebarTab, urlState.isEditing, navigateToLayers, navigateToPage, navigateToPageEdit]);
 
   // Fetch referenced collection items recursively when layers with reference fields are detected
   useEffect(() => {

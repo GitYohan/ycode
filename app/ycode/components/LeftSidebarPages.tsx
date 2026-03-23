@@ -293,10 +293,11 @@ export default function LeftSidebarPages({
       return;
     }
 
-    // Clear layer selection FIRST to release lock on current page's channel
-    // before switching to the new page's channel
+    if (pageId === currentPageId) return;
+
+    // Set to body directly so the layer sync effect won't trigger a second URL update
     const { setSelectedLayerId } = useEditorStore.getState();
-    setSelectedLayerId(null);
+    setSelectedLayerId('body');
 
     // Immediate UI feedback - selection updates instantly
     setSelectedItemId(pageId);
