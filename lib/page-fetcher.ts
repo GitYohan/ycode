@@ -3289,6 +3289,19 @@ function layerToHtml(
     tag = 'a';
   }
 
+  // Divs with link settings render as <a> directly instead of being
+  // wrapped in <a class="contents"><div>…</div></a>.
+  // Only match actual div layers (layer.name === 'div'), not other layers
+  // whose tag was forced to 'div' by earlier overrides (e.g. headings with lists).
+  const isDivWithLink = !isButtonWithLink
+    && layer.name === 'div'
+    && tag === 'div'
+    && layer.id !== 'body'
+    && buttonLinkSettings && buttonLinkSettings.type;
+  if (isDivWithLink) {
+    tag = 'a';
+  }
+
   // Build classes string
   let classesStr = '';
   if (Array.isArray(layer.classes)) {
@@ -3768,8 +3781,8 @@ function layerToHtml(
   };
   if (layer.attributes) {
     for (const [key, value] of Object.entries(layer.attributes)) {
-      // Skip type attribute for buttons converted to <a>
-      if (isButtonWithLink && key === 'type') continue;
+      // Skip type attribute for elements converted to <a>
+      if ((isButtonWithLink || isDivWithLink) && key === 'type') continue;
       if (value !== undefined && value !== null) {
         const htmlKey = jsxToHtmlAttrMap[key] || key;
         // Boolean HTML attributes should be rendered without a value
@@ -3786,8 +3799,8 @@ function layerToHtml(
     attrs.push('selected');
   }
 
-  // For buttons rendered as <a>, resolve link href and add attributes directly
-  if (isButtonWithLink && buttonLinkSettings) {
+  // For buttons/divs rendered as <a>, resolve link href and add attributes directly
+  if ((isButtonWithLink || isDivWithLink) && buttonLinkSettings) {
     let btnLinkHref = '';
 
     switch (buttonLinkSettings.type) {
@@ -3856,7 +3869,9 @@ function layerToHtml(
         attrs.push('download');
       }
     }
-    attrs.push('role="button"');
+    if (isButtonWithLink) {
+      attrs.push('role="button"');
+    }
   }
 
   // For slider layers, strip inactive pagination/navigation children from the tree
