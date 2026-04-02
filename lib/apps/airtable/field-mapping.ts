@@ -55,7 +55,7 @@ export function getCmsFieldType(airtableType: AirtableFieldType): CollectionFiel
   return FIELD_TYPE_MAP[airtableType] || 'text';
 }
 
-const AIRTABLE_FIELD_TYPE_LABELS: Partial<Record<AirtableFieldType, string>> = {
+const AIRTABLE_FIELD_TYPE_LABELS: Record<AirtableFieldType, string> = {
   singleLineText: 'Text',
   email: 'Email',
   url: 'URL',
@@ -97,63 +97,51 @@ export function getAirtableFieldTypeLabel(type: AirtableFieldType | string): str
   return AIRTABLE_FIELD_TYPE_LABELS[type as AirtableFieldType] ?? type;
 }
 
+// Hoisted Sets for isFieldTypeCompatible — allocated once at module scope
+const NUMERIC_AIRTABLE = new Set<AirtableFieldType>([
+  'number', 'percent', 'currency', 'count', 'rating', 'duration', 'autoNumber',
+]);
+const DATE_AIRTABLE = new Set<AirtableFieldType>([
+  'date', 'dateTime', 'createdTime', 'lastModifiedTime',
+]);
+const TEXT_LIKE_AIRTABLE = new Set<AirtableFieldType>([
+  'singleLineText', 'multilineText', 'richText', 'formula', 'rollup',
+  'lookup', 'multipleLookupValues', 'aiText',
+]);
+const LINK_LIKE_AIRTABLE = new Set<AirtableFieldType>([
+  'url', 'singleLineText', 'formula', 'button',
+]);
+const EMAIL_LIKE_AIRTABLE = new Set<AirtableFieldType>([
+  'email', 'singleLineText', 'singleCollaborator', 'createdBy', 'lastModifiedBy',
+]);
+const COLOR_LIKE_AIRTABLE = new Set<AirtableFieldType>([
+  'singleLineText', 'formula', 'singleSelect',
+]);
+const STATUS_LIKE_AIRTABLE = new Set<AirtableFieldType>([
+  'singleSelect', 'singleLineText', 'formula',
+]);
+const MEDIA_CMS_TYPES = new Set<CollectionFieldType>(['audio', 'video', 'document']);
+const MEDIA_AIRTABLE = new Set<AirtableFieldType>(['multipleAttachments', 'url']);
+
 /** Check if an Airtable field type is compatible with a CMS field type */
 export function isFieldTypeCompatible(
   airtableType: AirtableFieldType,
   cmsType: CollectionFieldType
 ): boolean {
-  const suggestedType = getCmsFieldType(airtableType);
-  if (suggestedType === cmsType) return true;
-
-  // text is universally compatible — any value can serialize to string
+  if (getCmsFieldType(airtableType) === cmsType) return true;
   if (cmsType === 'text') return true;
-
-  // number types are interchangeable
-  const numericAirtable: AirtableFieldType[] = ['number', 'percent', 'currency', 'count', 'rating', 'duration', 'autoNumber'];
-  if (cmsType === 'number' && numericAirtable.includes(airtableType)) return true;
-
-  // date types are interchangeable
-  const dateAirtable: AirtableFieldType[] = ['date', 'dateTime', 'createdTime', 'lastModifiedTime'];
-  if ((cmsType === 'date' || cmsType === 'date_only') && dateAirtable.includes(airtableType)) return true;
-
-  // rich_text accepts any text-like Airtable field
-  const textLikeAirtable: AirtableFieldType[] = [
-    'singleLineText', 'multilineText', 'richText', 'formula', 'rollup',
-    'lookup', 'multipleLookupValues', 'aiText',
-  ];
-  if (cmsType === 'rich_text' && textLikeAirtable.includes(airtableType)) return true;
-
-  // image accepts attachments and explicit URLs
-  if (cmsType === 'image' && (airtableType === 'multipleAttachments' || airtableType === 'url')) return true;
-
-  // link accepts URL, text, or button fields
-  const linkLikeAirtable: AirtableFieldType[] = ['url', 'singleLineText', 'formula', 'button'];
-  if (cmsType === 'link' && linkLikeAirtable.includes(airtableType)) return true;
-
-  // email accepts email, text, or collaborator fields
-  const emailLikeAirtable: AirtableFieldType[] = ['email', 'singleLineText', 'singleCollaborator', 'createdBy', 'lastModifiedBy'];
-  if (cmsType === 'email' && emailLikeAirtable.includes(airtableType)) return true;
-
-  // phone accepts phone or text fields
+  if (cmsType === 'number' && NUMERIC_AIRTABLE.has(airtableType)) return true;
+  if ((cmsType === 'date' || cmsType === 'date_only') && DATE_AIRTABLE.has(airtableType)) return true;
+  if (cmsType === 'rich_text' && TEXT_LIKE_AIRTABLE.has(airtableType)) return true;
+  if (cmsType === 'image' && MEDIA_AIRTABLE.has(airtableType)) return true;
+  if (cmsType === 'link' && LINK_LIKE_AIRTABLE.has(airtableType)) return true;
+  if (cmsType === 'email' && EMAIL_LIKE_AIRTABLE.has(airtableType)) return true;
   if (cmsType === 'phone' && (airtableType === 'phoneNumber' || airtableType === 'singleLineText')) return true;
-
-  // boolean accepts checkbox or numeric (0/1)
   if (cmsType === 'boolean' && (airtableType === 'checkbox' || airtableType === 'number')) return true;
-
-  // color accepts text fields (hex values)
-  if (cmsType === 'color' && (airtableType === 'singleLineText' || airtableType === 'formula' || airtableType === 'singleSelect')) return true;
-
-  // status accepts select fields or text
-  const statusLikeAirtable: AirtableFieldType[] = ['singleSelect', 'singleLineText', 'formula'];
-  if (cmsType === 'status' && statusLikeAirtable.includes(airtableType)) return true;
-
-  // media types (audio, video, document) accept attachments and URLs
-  const mediaTypes: CollectionFieldType[] = ['audio', 'video', 'document'];
-  if (mediaTypes.includes(cmsType) && (airtableType === 'multipleAttachments' || airtableType === 'url')) return true;
-
-  // reference / multi_reference accept linked records
+  if (cmsType === 'color' && COLOR_LIKE_AIRTABLE.has(airtableType)) return true;
+  if (cmsType === 'status' && STATUS_LIKE_AIRTABLE.has(airtableType)) return true;
+  if (MEDIA_CMS_TYPES.has(cmsType) && MEDIA_AIRTABLE.has(airtableType)) return true;
   if ((cmsType === 'reference' || cmsType === 'multi_reference') && airtableType === 'multipleRecordLinks') return true;
-
   return false;
 }
 

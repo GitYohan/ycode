@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
@@ -51,7 +51,7 @@ import type {
   AirtableField,
   AirtableFieldMapping,
 } from '@/lib/apps/airtable/types';
-import type { CollectionField } from '@/types';
+import type { CollectionField, CollectionFieldType } from '@/types';
 
 // =============================================================================
 // Types
@@ -427,14 +427,15 @@ export default function AirtableSettings({
   const refreshConnections = async () => {
     const conns = await airtableApi.getConnections();
     setConnections(conns);
+    return conns;
   };
 
   const handleSync = async (connectionId: string) => {
     setSyncingIds((prev) => new Set(prev).add(connectionId));
     try {
       await airtableApi.sync(connectionId);
-      await refreshConnections();
-      const conn = connections.find((c) => c.id === connectionId);
+      const freshConns = await refreshConnections();
+      const conn = freshConns.find((c) => c.id === connectionId);
       if (conn) {
         const store = useCollectionsStore.getState();
         const q = store.lastItemsQuery[conn.collectionId] || {};
@@ -891,6 +892,24 @@ function FieldMappingGrid({
   isLoading = false,
   onMappingChange,
 }: FieldMappingGridProps) {
+  const mappingById = useMemo(
+    () => new Map(mapping.map((m) => [m.cmsFieldId, m])),
+    [mapping]
+  );
+
+  const compatibleFieldsMap = useMemo(() => {
+    const seen = new Map<CollectionFieldType, AirtableField[]>();
+    return (cmsType: CollectionFieldType) => {
+      const cached = seen.get(cmsType);
+      if (cached) return cached;
+      const result = airtableFields.filter((atField) =>
+        isFieldTypeCompatible(atField.type, cmsType)
+      );
+      seen.set(cmsType, result);
+      return result;
+    };
+  }, [airtableFields]);
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -900,10 +919,8 @@ function FieldMappingGrid({
       </div>
 
       {cmsFields.map((cmsField) => {
-        const fieldMapping = mapping.find((m) => m.cmsFieldId === cmsField.id);
-        const compatibleFields = airtableFields.filter((atField) =>
-          isFieldTypeCompatible(atField.type, cmsField.type)
-        );
+        const fieldMapping = mappingById.get(cmsField.id);
+        const compatibleFields = compatibleFieldsMap(cmsField.type);
 
         return (
           <div

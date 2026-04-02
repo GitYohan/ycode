@@ -28,7 +28,7 @@ import {
   getValueMapByFieldIds,
 } from '@/lib/repositories/collectionItemValueRepository';
 
-import { listAllRecords, getWebhookPayloads } from './index';
+import { listAllRecords, getWebhookPayloads, deleteWebhook } from './index';
 import { transformFieldValue } from './field-mapping';
 import type { AirtableConnection, AirtableRecord, SyncResult } from './types';
 import type { CollectionFieldType, CollectionField } from '@/types';
@@ -91,6 +91,28 @@ export async function updateConnection(
   connections[idx] = { ...connections[idx], ...patch };
   await saveConnections(connections);
   return connections[idx];
+}
+
+/**
+ * Clean up all registered Airtable webhooks before disconnecting.
+ * Best-effort — failures are logged but don't block disconnect.
+ */
+export async function cleanupWebhooks(): Promise<void> {
+  const token = await getAppSettingValue<string>(APP_ID, 'api_token');
+  if (!token) return;
+
+  const connections = await getConnections();
+  const seen = new Set<string>();
+
+  for (const conn of connections) {
+    if (!conn.webhookId || seen.has(conn.webhookId)) continue;
+    seen.add(conn.webhookId);
+    try {
+      await deleteWebhook(token, conn.baseId, conn.webhookId);
+    } catch {
+      // Webhook may already be expired or deleted — safe to ignore
+    }
+  }
 }
 
 // =============================================================================
@@ -296,10 +318,12 @@ async function buildReferenceResolvers(
 
   if (refMappings.length === 0) return resolvers;
 
+  const fieldById = new Map(fields.map((f) => [f.id, f]));
+
   // Group by target collection to avoid loading the same collection twice
   const collectionToCmsFields = new Map<string, string[]>();
   for (const mapping of refMappings) {
-    const cmsField = fields.find((f) => f.id === mapping.cmsFieldId);
+    const cmsField = fieldById.get(mapping.cmsFieldId);
     if (!cmsField?.reference_collection_id) continue;
 
     const existing = collectionToCmsFields.get(cmsField.reference_collection_id) ?? [];

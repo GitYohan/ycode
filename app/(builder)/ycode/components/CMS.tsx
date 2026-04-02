@@ -2406,6 +2406,20 @@ const CMS = React.memo(function CMS() {
                   </ul>
                 </div>
               )}
+              {collectionUsage.airtableConnections.length > 0 && (
+                <div>
+                  <div className="flex gap-1.5 font-medium text-muted-foreground mb-1">
+                    <span className="text-foreground">Airtable sync</span>
+                    <span>&mdash;</span>
+                    <span>{collectionUsage.airtableConnections.length} connection{collectionUsage.airtableConnections.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 ml-1">
+                    {collectionUsage.airtableConnections.map((c) => (
+                      <li key={c.id}>{c.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         ) : (
