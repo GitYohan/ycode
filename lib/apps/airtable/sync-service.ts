@@ -39,54 +39,6 @@ const SLUG_FIELD_KEY = 'slug';
 const BULK_CHUNK_SIZE = 500;
 const ATTACHMENT_CONCURRENCY = 5;
 const INCREMENTAL_SYNC_THRESHOLD = 100;
-const SYNC_LOCK_TTL_MS = 5 * 60 * 1000;
-
-// =============================================================================
-// Sync Lock (atomic via unique constraint on app_settings)
-// =============================================================================
-
-/**
- * Atomically claim a per-connection sync lock using INSERT ON CONFLICT.
- * Two concurrent calls for the same connection: one inserts and gets true,
- * the other hits the unique constraint and gets false. Stale locks (>5 min)
- * are cleared first to prevent deadlocks from crashed invocations.
- */
-async function claimSyncLock(connectionId: string): Promise<boolean> {
-  const client = await getSupabaseAdmin();
-  if (!client) return false;
-
-  const lockKey = `sync_lock:${connectionId}`;
-
-  await client
-    .from('app_settings')
-    .delete()
-    .eq('app_id', APP_ID)
-    .eq('key', lockKey)
-    .lt('updated_at', new Date(Date.now() - SYNC_LOCK_TTL_MS).toISOString());
-
-  const { error } = await client
-    .from('app_settings')
-    .insert({
-      app_id: APP_ID,
-      key: lockKey,
-      value: { lockedAt: new Date().toISOString() },
-      updated_at: new Date().toISOString(),
-    });
-
-  return !error;
-}
-
-async function releaseSyncLock(connectionId: string): Promise<void> {
-  const client = await getSupabaseAdmin();
-  if (!client) return;
-
-  await client
-    .from('app_settings')
-    .delete()
-    .eq('app_id', APP_ID)
-    .eq('key', `sync_lock:${connectionId}`);
-}
-
 // =============================================================================
 // Connection Helpers
 // =============================================================================
@@ -338,9 +290,6 @@ async function incrementalSync(
  * Process an Airtable webhook notification.
  * Extracts per-record changes and runs incremental sync when practical,
  * falling back to full sync for large changesets.
- *
- * Concurrency guard: uses an atomic database lock (INSERT ON CONFLICT)
- * so only one serverless invocation processes a connection at a time.
  */
 export async function processWebhookNotification(
   baseId: string,
@@ -355,37 +304,43 @@ export async function processWebhookNotification(
 
   if (affectedConnections.length === 0) return [];
 
-  const results: SyncResult[] = [];
-  for (const conn of affectedConnections) {
-    if (!await claimSyncLock(conn.id)) continue;
+  // Clean up lock rows from previous implementation
+  const client = await getSupabaseAdmin();
+  if (client) {
+    await client
+      .from('app_settings')
+      .delete()
+      .eq('app_id', APP_ID)
+      .like('key', 'sync_lock:%');
+  }
 
-    try {
-      const freshConn = await getConnectionById(conn.id);
-      if (!freshConn) continue;
+  const cursor = affectedConnections[0].webhookCursor || undefined;
+  const payloadResponse = await getWebhookPayloads(token, baseId, webhookId, cursor);
 
-      const cursor = freshConn.webhookCursor || undefined;
-      const payloadResponse = await getWebhookPayloads(token, baseId, webhookId, cursor);
-
-      if (payloadResponse.cursor) {
+  if (!payloadResponse.payloads?.length) {
+    if (payloadResponse.cursor) {
+      for (const conn of affectedConnections) {
         await updateConnection(conn.id, { webhookCursor: payloadResponse.cursor });
       }
-
-      if (!payloadResponse.payloads?.length) continue;
-
-      const changes = extractTableChanges(payloadResponse.payloads, conn.tableId);
-      const totalChanges = changes.createdRecordIds.length
-        + changes.changedRecordIds.length
-        + changes.destroyedRecordIds.length;
-
-      if (totalChanges > 0) {
-        const result = totalChanges > INCREMENTAL_SYNC_THRESHOLD
-          ? await fullSync(freshConn)
-          : await incrementalSync(freshConn, changes);
-        results.push(result);
-      }
-    } finally {
-      await releaseSyncLock(conn.id);
     }
+    return [];
+  }
+
+  const results: SyncResult[] = [];
+  for (const conn of affectedConnections) {
+    const changes = extractTableChanges(payloadResponse.payloads, conn.tableId);
+    const totalChanges = changes.createdRecordIds.length
+      + changes.changedRecordIds.length
+      + changes.destroyedRecordIds.length;
+
+    if (totalChanges > 0) {
+      const result = totalChanges > INCREMENTAL_SYNC_THRESHOLD
+        ? await fullSync(conn)
+        : await incrementalSync(conn, changes);
+      results.push(result);
+    }
+
+    await updateConnection(conn.id, { webhookCursor: payloadResponse.cursor });
   }
 
   return results;
@@ -834,59 +789,70 @@ async function executeBatchOperations(
 
   if (toCreate.length > 0) {
     try {
-      const newItemIds = toCreate.map(() => randomUUID());
-      const newItems = newItemIds.map((id) => ({
-        id,
-        collection_id: collectionId,
-        manual_order: 0,
-        is_published: false,
-        is_publishable: true,
-      }));
+      // Re-check which records still need creating — a concurrent sync may
+      // have already inserted some while this one was processing.
+      const latestValues = await getValueMapByFieldIds([ctx.recordIdFieldId]);
+      const existingRecordIdValues = latestValues.get(ctx.recordIdFieldId);
+      const knownRecordIds = existingRecordIdValues
+        ? new Set(existingRecordIdValues.values())
+        : new Set<string>();
+      const recordsToInsert = toCreate.filter((r) => !knownRecordIds.has(r.id));
 
-      let nextAutoId = 1;
-      if (ctx.autoFields.idFieldId) {
-        for (const item of existingItems) {
-          const val = existingValues[item.id]?.[ctx.autoFields.idFieldId];
-          if (val) {
-            const num = parseInt(String(val), 10);
-            if (!isNaN(num) && num >= nextAutoId) nextAutoId = num + 1;
+      if (recordsToInsert.length > 0) {
+        const newItemIds = recordsToInsert.map(() => randomUUID());
+        const newItems = newItemIds.map((id) => ({
+          id,
+          collection_id: collectionId,
+          manual_order: 0,
+          is_published: false,
+          is_publishable: true,
+        }));
+
+        let nextAutoId = 1;
+        if (ctx.autoFields.idFieldId) {
+          for (const item of existingItems) {
+            const val = existingValues[item.id]?.[ctx.autoFields.idFieldId];
+            if (val) {
+              const num = parseInt(String(val), 10);
+              if (!isNaN(num) && num >= nextAutoId) nextAutoId = num + 1;
+            }
           }
+        }
+
+        const buildValues = async () => {
+          const now = new Date().toISOString();
+          const valuesToInsert: Array<{ item_id: string; field_id: string; value: string | null }> = [];
+          for (let i = 0; i < recordsToInsert.length; i++) {
+            const vals = await buildRecordValues(recordsToInsert[i], ctx);
+
+            if (ctx.autoFields.idFieldId) {
+              vals[ctx.autoFields.idFieldId] = String(nextAutoId++);
+            }
+            if (ctx.autoFields.createdAtFieldId) {
+              vals[ctx.autoFields.createdAtFieldId] = now;
+            }
+            if (ctx.autoFields.updatedAtFieldId) {
+              vals[ctx.autoFields.updatedAtFieldId] = now;
+            }
+
+            for (const [fieldId, value] of Object.entries(vals)) {
+              valuesToInsert.push({ item_id: newItemIds[i], field_id: fieldId, value });
+            }
+          }
+          return valuesToInsert;
+        };
+
+        const [, valuesToInsert] = await Promise.all([
+          createItemsBulk(newItems),
+          buildValues(),
+        ]);
+
+        for (let i = 0; i < valuesToInsert.length; i += BULK_CHUNK_SIZE) {
+          await insertValuesBulk(valuesToInsert.slice(i, i + BULK_CHUNK_SIZE));
         }
       }
 
-      const buildValues = async () => {
-        const now = new Date().toISOString();
-        const valuesToInsert: Array<{ item_id: string; field_id: string; value: string | null }> = [];
-        for (let i = 0; i < toCreate.length; i++) {
-          const vals = await buildRecordValues(toCreate[i], ctx);
-
-          if (ctx.autoFields.idFieldId) {
-            vals[ctx.autoFields.idFieldId] = String(nextAutoId++);
-          }
-          if (ctx.autoFields.createdAtFieldId) {
-            vals[ctx.autoFields.createdAtFieldId] = now;
-          }
-          if (ctx.autoFields.updatedAtFieldId) {
-            vals[ctx.autoFields.updatedAtFieldId] = now;
-          }
-
-          for (const [fieldId, value] of Object.entries(vals)) {
-            valuesToInsert.push({ item_id: newItemIds[i], field_id: fieldId, value });
-          }
-        }
-        return valuesToInsert;
-      };
-
-      const [, valuesToInsert] = await Promise.all([
-        createItemsBulk(newItems),
-        buildValues(),
-      ]);
-
-      for (let i = 0; i < valuesToInsert.length; i += BULK_CHUNK_SIZE) {
-        await insertValuesBulk(valuesToInsert.slice(i, i + BULK_CHUNK_SIZE));
-      }
-
-      result.created = toCreate.length;
+      result.created = recordsToInsert.length;
     } catch (error) {
       result.errors.push(`Create failed: ${error instanceof Error ? error.message : 'Unknown'}`);
     }
