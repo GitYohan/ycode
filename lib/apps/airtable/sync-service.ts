@@ -167,52 +167,31 @@ export async function refreshActiveWebhooks(
 // Webhook Sync Lock
 // =============================================================================
 
+interface SyncLock {
+  locked_at: string | null;
+}
+
 /**
- * Atomic distributed lock using an app_settings row as a mutex.
- * Uses INSERT … ON CONFLICT DO UPDATE WHERE to guarantee only one
- * serverless invocation processes a given webhook at a time.
- * Mirrors the legacy Cache::lock() pattern.
+ * Best-effort distributed lock via Supabase REST API.
+ * Uses getAppSettingValue/setAppSetting to avoid Knex connection pool
+ * exhaustion on serverless platforms with limited pool sizes.
  *
- * Handles both single-tenant (unique on app_id,key) and multi-tenant
- * (unique on tenant_id,app_id,key) constraint variants.
- *
- * @param tenantId - Captured from request headers before fire-and-forget.
- *   Passing explicitly avoids relying on AsyncLocalStorage in background context.
+ * Not strictly atomic (TOCTOU window), but combined with the dedup check
+ * in executeBatchOperations, prevents duplicate record creation.
  */
-async function tryClaimSyncLock(webhookId: string, tenantId: string | null): Promise<'acquired' | 'busy' | 'error'> {
+async function tryClaimSyncLock(webhookId: string): Promise<'acquired' | 'busy' | 'error'> {
   try {
-    const { getKnexClient } = await import('@/lib/knex-client');
-    const knex = await getKnexClient();
-
     const lockKey = `sync_lock_${webhookId}`;
-    const now = new Date().toISOString();
-    const staleThreshold = new Date(Date.now() - SYNC_LOCK_TIMEOUT_MS).toISOString();
-    const lockValue = JSON.stringify({ locked_at: now });
+    const existing = await getAppSettingValue<SyncLock>(APP_ID, lockKey);
 
-    const whereClause = `WHERE app_settings.value->>'locked_at' IS NULL
-            OR app_settings.value->>'locked_at' < ?`;
+    if (existing?.locked_at) {
+      const lockedAt = new Date(existing.locked_at).getTime();
+      const isStale = Date.now() - lockedAt > SYNC_LOCK_TIMEOUT_MS;
+      if (!isStale) return 'busy';
+    }
 
-    const result = tenantId
-      ? await knex.raw(
-        `INSERT INTO app_settings (app_id, key, value, created_at, updated_at, tenant_id)
-         VALUES ('airtable', ?, ?::jsonb, ?, ?, ?)
-         ON CONFLICT (tenant_id, app_id, key) DO UPDATE
-           SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
-           ${whereClause}
-         RETURNING id`,
-        [lockKey, lockValue, now, now, tenantId, staleThreshold]
-      )
-      : await knex.raw(
-        `INSERT INTO app_settings (app_id, key, value, created_at, updated_at)
-         VALUES ('airtable', ?, ?::jsonb, ?, ?)
-         ON CONFLICT (app_id, key) DO UPDATE
-           SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
-           ${whereClause}
-         RETURNING id`,
-        [lockKey, lockValue, now, now, staleThreshold]
-      );
-
-    return (result.rows?.length ?? 0) > 0 ? 'acquired' : 'busy';
+    await setAppSetting(APP_ID, lockKey, { locked_at: new Date().toISOString() });
+    return 'acquired';
   } catch (err) {
     console.error('[Airtable Sync] Lock acquisition failed, proceeding without lock:', err);
     return 'error';
@@ -220,25 +199,10 @@ async function tryClaimSyncLock(webhookId: string, tenantId: string | null): Pro
 }
 
 /** Release the sync lock. Best-effort — stale timeout handles cleanup on crash. */
-async function releaseSyncLock(webhookId: string, tenantId: string | null): Promise<void> {
+async function releaseSyncLock(webhookId: string): Promise<void> {
   try {
-    const { getKnexClient } = await import('@/lib/knex-client');
-    const knex = await getKnexClient();
-
     const lockKey = `sync_lock_${webhookId}`;
-    const now = new Date().toISOString();
-
-    const tenantFilter = tenantId ? ` AND tenant_id = ?` : '';
-    const params = tenantId
-      ? [now, lockKey, tenantId]
-      : [now, lockKey];
-
-    await knex.raw(
-      `UPDATE app_settings
-       SET value = '{"locked_at": null}'::jsonb, updated_at = ?
-       WHERE app_id = 'airtable' AND key = ?${tenantFilter}`,
-      params
-    );
+    await setAppSetting(APP_ID, lockKey, { locked_at: null });
   } catch {
     // Best-effort — stale timeout handles cleanup
   }
@@ -388,15 +352,15 @@ export async function processWebhookNotification(
   tenantId?: string | null
 ): Promise<SyncResult[]> {
   const tid = tenantId ?? null;
-  const lockStatus = await tryClaimSyncLock(webhookId, tid);
-
-  // Only skip when another invocation is actively processing this webhook.
-  // On lock errors, proceed anyway — better to risk a duplicate than to
-  // silently drop every webhook.
-  if (lockStatus === 'busy') return [];
-  const hasLock = lockStatus === 'acquired';
 
   const doSync = async (): Promise<SyncResult[]> => {
+    // Lock must be inside doSync so it runs within the tenant context
+    // (runWithTenantId) — otherwise getSupabaseAdmin() has no tenant scope.
+    const lockStatus = await tryClaimSyncLock(webhookId);
+
+    if (lockStatus === 'busy') return [];
+    const hasLock = lockStatus === 'acquired';
+
     try {
       if (hasLock) {
         // Debounce: let rapid-fire notifications settle before hitting the API
@@ -454,14 +418,13 @@ export async function processWebhookNotification(
       return results;
     } finally {
       if (hasLock) {
-        await releaseSyncLock(webhookId, tid);
+        await releaseSyncLock(webhookId);
       }
     }
   };
 
-  // Wrap in explicit tenant context so all nested getSupabaseAdmin() /
-  // getTenantIdFromHeaders() calls resolve correctly even after the
-  // Next.js request context is gone (fire-and-forget).
+  // Wrap in explicit tenant context so all nested calls (including lock
+  // acquisition) resolve the correct tenant via AsyncLocalStorage.
   return tid ? runWithTenantId(tid, doSync) : doSync();
 }
 
