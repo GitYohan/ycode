@@ -1,4 +1,5 @@
 import { cache } from 'react';
+import { escapeHtml } from '@/lib/escape-html';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { getKnexClient } from '@/lib/knex-client';
 import { buildSlugPath, buildDynamicPageUrl, buildLocalizedSlugPath, buildLocalizedDynamicPageUrl, detectLocaleFromPath, matchPageWithTranslatedSlugs, matchDynamicPageWithTranslatedSlugs } from '@/lib/page-utils';
@@ -11,6 +12,7 @@ import { isFieldVariable, isAssetVariable, createDynamicTextVariable, createDyna
 import { generateImageSrcset, getImageSizes, getOptimizedImageUrl, getAssetProxyUrl, DEFAULT_ASSETS, collectLayerAssetIds } from '@/lib/asset-utils';
 import { resolveComponents, applyComponentOverrides } from '@/lib/resolve-components';
 import { isTiptapDoc, hasBlockElementsWithResolver } from '@/lib/tiptap-utils';
+import { castValue } from '@/lib/collection-utils';
 import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
 
 // Pagination context passed through to resolveCollectionLayers
@@ -320,8 +322,8 @@ async function fetchPageByPathInternal(
     // If path is empty after locale detection (e.g., "/fr/" -> "fr" -> ""),
     // try to fetch the homepage
     if (targetPath === '' && detectedLocale) {
-      // Pass preloaded components to avoid redundant query
-      const homepageData = await fetchHomepage(isPublished, paginationContext, components);
+      // Pass preloaded components and translations so CMS content is translated
+      const homepageData = await fetchHomepage(isPublished, paginationContext, components, tenantId, translations);
       if (homepageData) {
         // Components and collection layers are already resolved by fetchHomepage
         // Apply translations for the detected locale
@@ -710,7 +712,8 @@ export const fetchHomepage = cache(async function fetchHomepage(
   isPublished: boolean,
   paginationContext?: PaginationContext,
   preloadedComponents?: Component[],
-  tenantId?: string
+  tenantId?: string,
+  translations?: Record<string, Translation>
 ): Promise<Pick<PageData, 'page' | 'pageLayers' | 'components' | 'locale' | 'availableLocales' | 'translations'> | null> {
   try {
     const supabase = await getSupabaseAdmin(tenantId);
@@ -756,11 +759,11 @@ export const fetchHomepage = cache(async function fetchHomepage(
 
     // Resolve collection layers server-side (for both draft and published)
     let resolvedLayers = layersWithComponents.length > 0
-      ? await resolveCollectionLayers(layersWithComponents, isPublished, undefined, paginationContext, undefined)
+      ? await resolveCollectionLayers(layersWithComponents, isPublished, undefined, paginationContext, translations)
       : [];
 
     // Resolve collections inside rich text embedded components
-    resolvedLayers = await resolveRichTextCollections(resolvedLayers, components, isPublished);
+    resolvedLayers = await resolveRichTextCollections(resolvedLayers, components, isPublished, translations);
 
     // Resolve all AssetVariables to URLs server-side (prevents client-side API calls)
     const resolved = await resolveAllAssets(resolvedLayers, isPublished, components);
@@ -773,9 +776,9 @@ export const fetchHomepage = cache(async function fetchHomepage(
         layers: resolvedLayers,
       },
       components, // Layers are pre-resolved; components passed for rich-text embedded rendering
-      locale: null, // Homepage accessed without locale prefix
+      locale: null,
       availableLocales: availableLocales as Locale[] || [],
-      translations: {}, // Homepage accessed without locale prefix
+      translations: translations || {},
     };
   } catch (error) {
     return null;
@@ -800,8 +803,13 @@ function injectTranslatedText(
     const updates: Partial<Layer> = {};
     const variableUpdates: Partial<Layer['variables']> = {};
 
+    // Use original layer ID for translation lookups — after resolveComponents,
+    // child layer IDs are transformed to instance-specific IDs (e.g., "instanceId-childId")
+    // but translations are stored with the original component layer IDs
+    const translationLayerId = layer._originalLayerId || layer.id;
+
     // 1. Inject text translation
-    const textTranslationKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:text`, layer._masterComponentId);
+    const textTranslationKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:text`, layer._masterComponentId);
     const textTranslation = getTranslationByKey(translations, textTranslationKey);
 
     const textValue = getTranslationValue(textTranslation);
@@ -817,9 +825,9 @@ function injectTranslatedText(
     // 2. Inject asset translations for media layers
     // Image layer - translate src and alt text
     if (layer.name === 'image') {
-      const imageSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:image_src`, layer._masterComponentId);
+      const imageSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:image_src`, layer._masterComponentId);
       const imageSrcTranslation = getTranslationByKey(translations, imageSrcKey);
-      const imageAltKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:image_alt`, layer._masterComponentId);
+      const imageAltKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:image_alt`, layer._masterComponentId);
       const imageAltTranslation = getTranslationByKey(translations, imageAltKey);
 
       if (imageSrcTranslation || imageAltTranslation) {
@@ -843,9 +851,9 @@ function injectTranslatedText(
 
     // Video layer - translate src and poster
     if (layer.name === 'video') {
-      const videoSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:video_src`, layer._masterComponentId);
+      const videoSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:video_src`, layer._masterComponentId);
       const videoSrcTranslation = getTranslationByKey(translations, videoSrcKey);
-      const videoPosterKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:video_poster`, layer._masterComponentId);
+      const videoPosterKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:video_poster`, layer._masterComponentId);
       const videoPosterTranslation = getTranslationByKey(translations, videoPosterKey);
 
       if (videoSrcTranslation || videoPosterTranslation) {
@@ -865,7 +873,7 @@ function injectTranslatedText(
 
     // Audio layer - translate src
     if (layer.name === 'audio') {
-      const audioSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:audio_src`, layer._masterComponentId);
+      const audioSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:audio_src`, layer._masterComponentId);
       const audioSrcTranslation = getTranslationByKey(translations, audioSrcKey);
 
       if (audioSrcTranslation && audioSrcTranslation.content_value) {
@@ -877,7 +885,7 @@ function injectTranslatedText(
 
     // Icon layer - translate src
     if (layer.name === 'icon') {
-      const iconSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:icon_src`, layer._masterComponentId);
+      const iconSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:icon_src`, layer._masterComponentId);
       const iconSrcTranslation = getTranslationByKey(translations, iconSrcKey);
 
       if (iconSrcTranslation && iconSrcTranslation.content_value) {
@@ -942,10 +950,12 @@ function applyCmsTranslations(
 
   const translatedValues = { ...itemValues };
 
-  // Create a map of field ID to field key for lookup
+  // Create maps for field key and field type lookup
   const fieldIdToKey = new Map<string, string | null>();
+  const fieldIdToType = new Map<string, string>();
   for (const field of collectionFields) {
     fieldIdToKey.set(field.id, field.key);
+    fieldIdToType.set(field.id, field.type);
   }
 
   // Apply translations for each field
@@ -959,7 +969,12 @@ function applyCmsTranslations(
 
     const translatedValue = getTranslationValue(translation);
     if (translatedValue) {
-      translatedValues[fieldId] = translatedValue;
+      // Cast the translated string using the field type so rich_text values
+      // are parsed back into Tiptap document objects (matching castValue behavior)
+      const fieldType = fieldIdToType.get(fieldId);
+      translatedValues[fieldId] = fieldType
+        ? castValue(translatedValue, fieldType as any)
+        : translatedValue;
     }
   }
 
@@ -1193,7 +1208,7 @@ async function injectCollectionData(
         content_hash: null,
         values: enhancedValues,
       };
-      const resolved = resolveInlineVariablesWithRelationships(textContent, mockItem, timezone);
+      const resolved = resolveInlineVariablesWithRelationships(textContent, mockItem, timezone, rawItemValues);
 
       resolvedVars.text = {
         type: 'dynamic_text',
@@ -1309,7 +1324,8 @@ async function injectCollectionData(
 function resolveInlineVariablesWithRelationships(
   text: string,
   collectionItem: CollectionItemWithValues,
-  timezone: string = 'UTC'
+  timezone: string = 'UTC',
+  rawValues?: Record<string, string>
 ): string {
   if (!collectionItem || !collectionItem.values) {
     return text;
@@ -1331,7 +1347,10 @@ function resolveInlineVariablesWithRelationships(
 
         const fieldValue = collectionItem.values[fullPath];
         if (parsed.data.format && fieldValue) {
-          return formatFieldValue(fieldValue, parsed.data.field_type, timezone, parsed.data.format);
+          // Use raw (unformatted ISO) values for custom format presets,
+          // since itemValues are pre-formatted by formatDateFieldsInItemValues
+          const rawValue = rawValues?.[fullPath] ?? fieldValue;
+          return formatFieldValue(rawValue, parsed.data.field_type, timezone, parsed.data.format);
         }
         return fieldValue || '';
       }
@@ -3011,7 +3030,7 @@ async function injectCollectionDataForHtml(
         content_hash: null,
         values: enhancedValues,
       };
-      const resolved = resolveInlineVariables(textContent, mockItem, timezone);
+      const resolved = resolveInlineVariables(textContent, mockItem, timezone, rawItemValues);
       resolvedVars.text = {
         type: 'dynamic_text',
         data: { content: resolved },
@@ -4415,16 +4434,4 @@ function layerToHtml(
   }
 
   return elementHtml;
-}
-
-/**
- * Escape HTML special characters to prevent XSS
- */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
