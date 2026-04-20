@@ -316,7 +316,7 @@ export const structureTemplates: Record<string, BlockTemplate> = {
 
   thead: {
     icon: 'header',
-    name: 'Table Head',
+    name: 'Head',
     template: {
       name: 'thead',
       classes: [],
@@ -332,7 +332,7 @@ export const structureTemplates: Record<string, BlockTemplate> = {
 
   tbody: {
     icon: 'body',
-    name: 'Table Body',
+    name: 'Body',
     template: {
       name: 'tbody',
       classes: [],
@@ -348,7 +348,7 @@ export const structureTemplates: Record<string, BlockTemplate> = {
 
   tr: {
     icon: 'section',
-    name: 'Table Row',
+    name: 'Row',
     template: {
       name: 'tr',
       classes: [],
@@ -358,13 +358,13 @@ export const structureTemplates: Record<string, BlockTemplate> = {
 
   th: {
     icon: 'container',
-    name: 'Table Header',
+    name: 'Header',
     template: headerCell('Header') as any,
   },
 
   td: {
     icon: 'container',
-    name: 'Table Cell',
+    name: 'Cell',
     template: bodyCell('Cell') as any,
   },
 
