@@ -403,8 +403,6 @@ export interface Layer {
   _collectionItemId?: string;
   // SSR-only property for collection item slug (used for link URL building)
   _collectionItemSlug?: string;
-  // SSR-only property for sorted collection item IDs (used for next/previous navigation)
-  _collectionSortedItemIds?: string[];
   // SSR-only property for layer-specific collection data (layer_id -> field values map)
   _layerDataMap?: Record<string, Record<string, string>>;
   // SSR-only property for master component ID (for translation lookups)
@@ -626,6 +624,16 @@ export interface PageSettings {
   cms?: {
     collection_id: string;
     slug_field_id: string;
+    /**
+     * Controls the order in which `next-item` / `previous-item` link keywords
+     * traverse this dynamic page's collection. When omitted, items are sorted
+     * by their `manual_order` ascending — the same default used elsewhere in
+     * the system.
+     */
+    next_previous?: {
+      sort_by?: 'manual' | string; // 'manual' or a collection field id
+      sort_order?: 'asc' | 'desc';
+    };
   };
   auth?: {
     enabled: boolean;

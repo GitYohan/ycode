@@ -46,7 +46,7 @@ import FilterableCollection from '@/components/FilterableCollection';
 import LocaleSelector from '@/components/layers/LocaleSelector';
 import { usePagesStore } from '@/stores/usePagesStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
-import { generateLinkHref, resolveLinkAttrs, type LinkResolutionContext } from '@/lib/link-utils';
+import { generateLinkHref, resolveLinkAttrs, isLinkAtCollectionBoundary, type LinkResolutionContext } from '@/lib/link-utils';
 import { collectEditorHiddenLayerIds, type HiddenLayerInfo } from '@/lib/animation-utils';
 import AnimationInitializer from '@/components/AnimationInitializer';
 import { transformLayerIdsForInstance, resolveVariableLinks } from '@/lib/resolve-components';
@@ -94,6 +94,8 @@ interface LayerRendererProps {
   layerDataMap?: Record<string, Record<string, string>>; // Map of collection layer ID -> item data for layer-specific resolution
   pageCollectionItemId?: string; // The ID of the page's collection item (for dynamic pages)
   pageCollectionItemData?: Record<string, string> | null; // Page's collection item data (for dynamic pages)
+  /** Ordered ids of the dynamic page's collection — powers `next-item` / `previous-item` link keywords. */
+  pageCollectionSortedItemIds?: string[];
   hiddenLayerInfo?: HiddenLayerInfo[]; // Layer IDs with breakpoint info for animations
   editorHiddenLayerIds?: Map<string, Breakpoint[]>; // Layer IDs to hide on canvas (edit mode only) with breakpoint info
   editorBreakpoint?: Breakpoint; // Current breakpoint in editor
@@ -146,6 +148,7 @@ const LayerRenderer: React.FC<LayerRendererProps> = ({
   layerDataMap,
   pageCollectionItemId,
   pageCollectionItemData,
+  pageCollectionSortedItemIds,
   collectionItemSlugs,
   hiddenLayerInfo,
   editorHiddenLayerIds,
@@ -288,6 +291,7 @@ const LayerRenderer: React.FC<LayerRendererProps> = ({
         layerDataMap={layerDataMap}
         pageCollectionItemId={pageCollectionItemId}
         pageCollectionItemData={pageCollectionItemData}
+        pageCollectionSortedItemIds={pageCollectionSortedItemIds}
         hiddenLayerInfo={hiddenLayerInfo}
         editorHiddenLayerIds={editorHiddenLayerIds}
         editorBreakpoint={editorBreakpoint}
@@ -350,6 +354,8 @@ const LayerItem: React.FC<{
   layerDataMap?: Record<string, Record<string, string>>; // Map of collection layer ID -> item data
   pageCollectionItemId?: string; // The ID of the page's collection item (for dynamic pages)
   pageCollectionItemData?: Record<string, string> | null;
+  /** Ordered ids of the dynamic page's collection — powers `next-item` / `previous-item` link keywords. */
+  pageCollectionSortedItemIds?: string[];
   hiddenLayerInfo?: HiddenLayerInfo[];
   editorHiddenLayerIds?: Map<string, Breakpoint[]>;
   editorBreakpoint?: Breakpoint;
@@ -400,6 +406,7 @@ const LayerItem: React.FC<{
   layerDataMap,
   pageCollectionItemId,
   pageCollectionItemData,
+  pageCollectionSortedItemIds,
   hiddenLayerInfo,
   editorHiddenLayerIds,
   editorBreakpoint,
@@ -498,6 +505,7 @@ const LayerItem: React.FC<{
     layerDataMap: effectiveLayerDataMap,
     pageCollectionItemId,
     pageCollectionItemData,
+    pageCollectionSortedItemIds,
     hiddenLayerInfo,
     editorHiddenLayerIds,
     editorBreakpoint,
@@ -520,7 +528,7 @@ const LayerItem: React.FC<{
   // selectedLayerId and hoveredLayerId kept in the object for SSR/published mode
   // but excluded from deps so changes don't cascade re-renders in edit mode.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [isEditMode, isPublished, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp, serverSettings]);
+  }), [isEditMode, isPublished, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, pageCollectionSortedItemIds, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp, serverSettings]);
 
   // Callback for rendering embedded components inside rich-text content
   // Clicks on the embedded component's internal layers should select the text layer
@@ -921,6 +929,7 @@ const LayerItem: React.FC<{
         anchorMap,
         resolvedAssets,
         layerDataMap: effectiveLayerDataMap,
+        pageCollectionSortedItemIds,
       };
 
     // Check for component variable override or default value
@@ -1555,6 +1564,7 @@ const LayerItem: React.FC<{
     anchorMap,
     resolvedAssets,
     layerDataMap: effectiveLayerDataMap,
+    pageCollectionSortedItemIds,
   };
 
   // Render element-specific content
@@ -1732,7 +1742,12 @@ const LayerItem: React.FC<{
       }
       if (layerLinkContext && isValidLinkSettings(layer.variables.link)) {
         const linkAttrs = resolveLinkAttrs(layer.variables.link, layerLinkContext);
-        if (linkAttrs) Object.assign(elementProps, linkAttrs);
+        if (linkAttrs) {
+          Object.assign(elementProps, linkAttrs);
+        } else if (isLinkAtCollectionBoundary(layer.variables.link, layerLinkContext)) {
+          elementProps['aria-disabled'] = 'true';
+          elementProps['data-link-disabled'] = 'true';
+        }
       }
     }
 
@@ -2656,6 +2671,7 @@ const LayerItem: React.FC<{
               layerDataMap={effectiveLayerDataMap}
               pageCollectionItemId={pageCollectionItemId}
               pageCollectionItemData={pageCollectionItemData}
+              pageCollectionSortedItemIds={pageCollectionSortedItemIds}
               pages={pages}
               folders={folders}
               collectionItemSlugs={collectionItemSlugs}
@@ -2860,6 +2876,7 @@ const LayerItem: React.FC<{
                         ? { ...pageCollectionItemData, ...enhancedItemValues }
                         : pageCollectionItemData
                     }
+                    pageCollectionSortedItemIds={pageCollectionSortedItemIds}
                     hiddenLayerInfo={hiddenLayerInfo}
                     editorHiddenLayerIds={editorHiddenLayerIds}
                     editorBreakpoint={editorBreakpoint}
@@ -2926,6 +2943,7 @@ const LayerItem: React.FC<{
               layerDataMap={effectiveLayerDataMap}
               pageCollectionItemId={pageCollectionItemId}
               pageCollectionItemData={pageCollectionItemData}
+              pageCollectionSortedItemIds={pageCollectionSortedItemIds}
               pages={pages}
               folders={folders}
               collectionItemSlugs={collectionItemSlugs}
@@ -2997,6 +3015,7 @@ const LayerItem: React.FC<{
             layerDataMap={effectiveLayerDataMap}
             pageCollectionItemId={pageCollectionItemId}
             pageCollectionItemData={pageCollectionItemData}
+            pageCollectionSortedItemIds={pageCollectionSortedItemIds}
             hiddenLayerInfo={hiddenLayerInfo}
             editorHiddenLayerIds={editorHiddenLayerIds}
             editorBreakpoint={editorBreakpoint}
@@ -3067,6 +3086,16 @@ const LayerItem: React.FC<{
         content = (
           <a
             {...linkAttrs}
+            className="contents"
+          >
+            {content}
+          </a>
+        );
+      } else if (isLinkAtCollectionBoundary(linkSettings, layerLinkContext)) {
+        content = (
+          <a
+            aria-disabled="true"
+            data-link-disabled="true"
             className="contents"
           >
             {content}

@@ -247,9 +247,10 @@ export default function LinkSettings(props: LinkSettingsProps) {
   const canUseCurrentPageItem = isDynamicPage && isCurrentPageDynamic
     && !!currentPageCollectionId && currentPageCollectionId === targetPageCollectionId;
 
-  // Next/previous items use the same conditions as current-page
-  // (only available when on a dynamic collection page)
-  const canUseNextPreviousItems = canUseCurrentPageItem;
+  // Next/previous navigation only makes sense when the link points back at the
+  // same dynamic page the user is editing — that's the only context where
+  // "previous" / "next" relative to the current item is well-defined.
+  const canUseNextPreviousItem = isDynamicPage && isCurrentPageDynamic && !!pageId && pageId === currentPageId;
 
   // Check if the layer itself is a collection layer
   const isCollectionLayer = !!(layer && getCollectionVariable(layer));
@@ -536,26 +537,20 @@ export default function LinkSettings(props: LinkSettingsProps) {
     [isStandaloneMode, layer, linkSettings, updateLinkSettings]
   );
 
-  // Handle collection item selection
+  // Handle collection item selection.
+  // The selection value is stored verbatim; it's either a concrete item id or
+  // one of the dynamic-resolution keywords (current-page / current-collection /
+  // next-item / previous-item / ref-*). Resolution happens at render time in
+  // `generateLinkHref`.
   const handleCollectionItemChange = useCallback(
     (itemId: string) => {
       if ((!isStandaloneMode && !layer) || !linkSettings) return;
-
-      // Map the selection values to the stored values
-      let storedValue: string;
-      if (itemId === 'current-page') {
-        storedValue = 'current-page';
-      } else if (itemId === 'current-collection') {
-        storedValue = 'current-collection';
-      } else {
-        storedValue = itemId; // Specific item ID
-      }
 
       updateLinkSettings({
         ...linkSettings,
         page: {
           ...linkSettings.page!,
-          collection_item_id: storedValue,
+          collection_item_id: itemId,
         },
       });
     },
@@ -907,8 +902,7 @@ export default function LinkSettings(props: LinkSettingsProps) {
                     <LinkItemOptions
                       canUseCurrentPageItem={canUseCurrentPageItem}
                       canUseCurrentCollectionItem={canUseCurrentCollectionItem}
-                      canUseNextItem={canUseNextPreviousItems}
-                      canUsePreviousItem={canUseNextPreviousItems}
+                      canUseNextPreviousItem={canUseNextPreviousItem}
                       referenceItemOptions={referenceItemOptions}
                       collectionItems={collectionItems}
                       collectionFields={linkedPageCollectionFields}
