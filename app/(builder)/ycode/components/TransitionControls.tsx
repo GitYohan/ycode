@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,8 +35,21 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
   const easing = getDesignProperty('transitions', 'easing') || '';
   const delay = getDesignProperty('transitions', 'delay') || '';
 
-  const hasEasing = !!easing;
-  const hasDelay = !!delay;
+  // Track which optional rows are explicitly active so they stay visible when
+  // the user temporarily clears their inputs. Reseeded whenever the layer or
+  // active breakpoint/state changes.
+  const [activeKeys, setActiveKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const next = new Set<string>();
+    if (easing) next.add('easing');
+    if (delay) next.add('delay');
+    setActiveKeys(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layer?.id, activeBreakpoint, activeUIState]);
+
+  const hasEasing = activeKeys.has('easing') || !!easing;
+  const hasDelay = activeKeys.has('delay') || !!delay;
 
   const inputs = useControlledInputs({ duration, delay }, extractMeasurementValue);
 
@@ -63,14 +76,58 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
     updateDesignProperty('transitions', 'easing', value || null);
   }, [updateDesignProperty]);
 
+  const activate = useCallback((id: string) => {
+    setActiveKeys(prev => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const deactivate = useCallback((id: string) => {
+    setActiveKeys(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
   const handleAddEasing = useCallback(() => {
+    activate('easing');
     updateDesignProperty('transitions', 'easing', 'linear');
-  }, [updateDesignProperty]);
+  }, [activate, updateDesignProperty]);
 
   const handleAddDelay = useCallback(() => {
+    activate('delay');
     inputs.delay[1]('0');
     updateDesignProperty('transitions', 'delay', '0');
-  }, [inputs.delay, updateDesignProperty]);
+  }, [activate, inputs.delay, updateDesignProperty]);
+
+  const handleRemoveEasing = useCallback(() => {
+    deactivate('easing');
+    updateDesignProperty('transitions', 'easing', null);
+  }, [deactivate, updateDesignProperty]);
+
+  const handleRemoveDelay = useCallback(() => {
+    deactivate('delay');
+    inputs.delay[1]('');
+    updateDesignProperty('transitions', 'delay', null);
+  }, [deactivate, inputs.delay, updateDesignProperty]);
+
+  const renderRemoveButton = (id: string, onRemove: () => void) => (
+    <span
+      role="button"
+      tabIndex={0}
+      aria-label={`Remove ${id}`}
+      className="p-0.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity cursor-pointer shrink-0"
+      onClick={onRemove}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRemove(); } }}
+    >
+      <Icon name="x" className="size-2.5" />
+    </span>
+  );
 
   return (
     <SettingsPanel
@@ -131,7 +188,7 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
               onChange={(e) => handleDurationChange(e.target.value)}
               placeholder="150"
             />
-            <InputGroupAddon align="inline-end">ms</InputGroupAddon>
+            <InputGroupAddon align="inline-end" className="text-xs opacity-50">ms</InputGroupAddon>
           </InputGroup>
         </div>
       </div>
@@ -140,23 +197,26 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
       {hasEasing && (
         <div className="grid grid-cols-3">
           <Label variant="muted">Easing</Label>
-          <div className="col-span-2 *:w-full">
-            <Select
-              value={easing}
-              onValueChange={handleEasingChange}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="linear">Linear</SelectItem>
-                  <SelectItem value="in">Ease In</SelectItem>
-                  <SelectItem value="out">Ease Out</SelectItem>
-                  <SelectItem value="in-out">Ease In Out</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+          <div className="col-span-2 flex items-center gap-2">
+            <div className="flex-1 min-w-0 *:w-full">
+              <Select
+                value={easing}
+                onValueChange={handleEasingChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="linear">Linear</SelectItem>
+                    <SelectItem value="in">Ease In</SelectItem>
+                    <SelectItem value="out">Ease Out</SelectItem>
+                    <SelectItem value="in-out">Ease In Out</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            {renderRemoveButton('easing', handleRemoveEasing)}
           </div>
         </div>
       )}
@@ -165,8 +225,8 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
       {hasDelay && (
         <div className="grid grid-cols-3">
           <Label variant="muted">Delay</Label>
-          <div className="col-span-2">
-            <InputGroup>
+          <div className="col-span-2 flex items-center gap-2">
+            <InputGroup className="flex-1 min-w-0">
               <InputGroupInput
                 value={inputs.delay[0]}
                 onChange={(e) => handleDelayChange(e.target.value)}
@@ -174,6 +234,7 @@ const TransitionControls = memo(function TransitionControls({ layer, onLayerUpda
               />
               <InputGroupAddon align="inline-end">ms</InputGroupAddon>
             </InputGroup>
+            {renderRemoveButton('delay', handleRemoveDelay)}
           </div>
         </div>
       )}
