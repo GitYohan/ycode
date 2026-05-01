@@ -88,6 +88,7 @@ export async function getValuesByItemIds(
   item_ids: string[],
   is_published: boolean = false,
   knownFieldTypes?: Record<string, string>,
+  fieldIds?: string[],
 ): Promise<Record<string, Record<string, any>>> {
   const client = await getSupabaseAdmin();
 
@@ -106,11 +107,15 @@ export async function getValuesByItemIds(
   // This avoids PostgREST overhead and URL-size chunking behavior.
   try {
     const knex = await getKnexClient();
-    allRows = await knex('collection_item_values')
+    let query = knex('collection_item_values')
       .select('item_id', 'field_id', 'value')
       .whereIn('item_id', item_ids)
       .andWhere('is_published', is_published)
       .whereNull('deleted_at');
+    if (fieldIds) {
+      query = query.whereIn('field_id', fieldIds);
+    }
+    allRows = await query;
   } catch {
     // Fallback: Supabase chunked reads
     const CHUNK_SIZE = 50;
@@ -121,13 +126,16 @@ export async function getValuesByItemIds(
 
     const chunkResults = await Promise.all(
       chunks.map(async (chunk) => {
-        const { data, error } = await client
+        let q = client
           .from('collection_item_values')
           .select('item_id, field_id, value')
           .in('item_id', chunk)
           .eq('is_published', is_published)
-          .is('deleted_at', null)
-          .limit(5000);
+          .is('deleted_at', null);
+        if (fieldIds) {
+          q = q.in('field_id', fieldIds);
+        }
+        const { data, error } = await q.limit(5000);
 
         if (error) {
           throw new Error(`Failed to fetch item values: ${error.message}`);
@@ -145,10 +153,10 @@ export async function getValuesByItemIds(
   }
 
   // Collect unique field IDs (only needed if caller didn't provide types)
-  const fieldIds = new Set<string>();
+  const discoveredFieldIds = new Set<string>();
   if (!knownFieldTypes) {
     for (const row of allRows) {
-      fieldIds.add(row.field_id);
+      discoveredFieldIds.add(row.field_id);
     }
   }
 
@@ -156,11 +164,11 @@ export async function getValuesByItemIds(
   let fieldTypeMap = knownFieldTypes;
   if (!fieldTypeMap) {
     fieldTypeMap = {};
-    if (fieldIds.size > 0) {
+    if (discoveredFieldIds.size > 0) {
       const { data: fields } = await client
         .from('collection_fields')
         .select('id, type')
-        .in('id', Array.from(fieldIds));
+        .in('id', Array.from(discoveredFieldIds));
 
       fields?.forEach((f: any) => { fieldTypeMap![f.id] = f.type; });
     }

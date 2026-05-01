@@ -1178,10 +1178,18 @@ async function batchResolveReferenceFields(
   fields: CollectionField[],
   isPublished: boolean,
   dataCache?: CollectionDataCache,
+  boundFieldPaths?: Set<string>,
 ): Promise<Record<string, string>[]> {
-  const referenceFields = fields.filter(
+  let referenceFields = fields.filter(
     f => f.type === 'reference' && f.reference_collection_id
   );
+
+  // When bound paths are known, only resolve reference fields that appear as a prefix
+  if (boundFieldPaths) {
+    referenceFields = referenceFields.filter(rf =>
+      Array.from(boundFieldPaths).some(p => p.startsWith(rf.id + '.'))
+    );
+  }
 
   if (referenceFields.length === 0) return itemsValues;
 
@@ -1240,8 +1248,10 @@ async function batchResolveReferenceFields(
       if (!refFields) continue;
 
       for (const rf of refFields) {
+        const dotKey = `${field.id}.${rf.id}`;
+        if (boundFieldPaths && !boundFieldPaths.has(dotKey)) continue;
         if (refItem.values[rf.id] !== undefined) {
-          enhanced[`${field.id}.${rf.id}`] = refItem.values[rf.id];
+          enhanced[dotKey] = refItem.values[rf.id];
         }
       }
     }
@@ -1849,6 +1859,191 @@ interface CollectionDataCache {
   itemsById: Map<string, CollectionItemWithValues>;
 }
 
+/**
+ * Scan a collection layer's child template and return every CMS field ID
+ * that is actually referenced (bound) in the subtree.
+ *
+ * Returns two sets:
+ *  - fieldIds:  simple UUIDs (for DB-level WHERE field_id IN filtering)
+ *  - fieldPaths: full dot-separated paths like "refFieldId.targetFieldId"
+ *                (for filtering enhancedValues after reference expansion)
+ *
+ * Stops recursion at child layers that define their own collection scope.
+ */
+function collectBoundFieldIds(layers: Layer[]): { fieldIds: Set<string>; fieldPaths: Set<string> } {
+  const fieldIds = new Set<string>();
+  const fieldPaths = new Set<string>();
+
+  function addFieldVariable(fv: { type: 'field'; data: { field_id: string | null; relationships?: string[] } }) {
+    const fid = fv.data.field_id;
+    if (!fid) return;
+    fieldIds.add(fid);
+    const rels = fv.data.relationships || [];
+    fieldPaths.add(rels.length > 0 ? [fid, ...rels].join('.') : fid);
+  }
+
+  function scanInlineVariableTags(html: string) {
+    const regex = /<ycode-inline-variable>([\s\S]*?)<\/ycode-inline-variable>/g;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(html)) !== null) {
+      try {
+        const parsed = JSON.parse(m[1].trim());
+        if (parsed.type === 'field' && parsed.data?.field_id) {
+          addFieldVariable(parsed);
+        }
+      } catch { /* skip malformed */ }
+    }
+  }
+
+  function scanTiptapNode(node: any) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'dynamicVariable') {
+      const v = node.attrs?.variable;
+      if (v?.type === 'field' && v.data?.field_id) addFieldVariable(v);
+    }
+    // richTextLink marks can reference fields (attrs.field is a full FieldVariable)
+    if (Array.isArray(node.marks)) {
+      for (const mark of node.marks) {
+        if (mark.type === 'richTextLink' && mark.attrs) {
+          const fv = mark.attrs.field;
+          if (fv?.type === 'field' && fv.data?.field_id) addFieldVariable(fv);
+          // Also scan inline variables in url/email/phone dynamic text attrs
+          for (const k of ['url', 'email', 'phone']) {
+            const lv = mark.attrs[k];
+            if (lv?.type === 'dynamic_text' && lv.data?.content) {
+              scanInlineVariableTags(lv.data.content);
+            }
+          }
+        }
+      }
+    }
+    if (Array.isArray(node.content)) node.content.forEach(scanTiptapNode);
+  }
+
+  function scanDesignColorVariable(dcv: any) {
+    if (!dcv || typeof dcv !== 'object') return;
+    if (dcv.field?.type === 'field') addFieldVariable(dcv.field);
+    for (const stops of [dcv.linear?.stops, dcv.radial?.stops]) {
+      if (Array.isArray(stops)) {
+        for (const stop of stops) {
+          if (stop.field?.type === 'field') addFieldVariable(stop.field);
+        }
+      }
+    }
+  }
+
+  function scanLayer(layer: Layer) {
+    const vars = layer.variables;
+    if (!vars) {
+      if (layer.children) {
+        for (const child of layer.children) {
+          if (child.variables?.collection?.id) continue;
+          scanLayer(child);
+        }
+      }
+      return;
+    }
+
+    // --- text ---
+    const tv = vars.text;
+    if (tv?.type === 'dynamic_text') {
+      scanInlineVariableTags(tv.data.content);
+    } else if (tv?.type === 'dynamic_rich_text' && tv.data.content) {
+      scanTiptapNode(tv.data.content);
+    }
+
+    // --- image.src / image.alt ---
+    const img = vars.image;
+    if (img?.src?.type === 'field') addFieldVariable(img.src as any);
+    if (img?.alt?.type === 'dynamic_text') scanInlineVariableTags((img.alt as any).data.content);
+
+    // --- video.src / video.poster ---
+    if (vars.video?.src?.type === 'field') addFieldVariable(vars.video.src as any);
+    if (vars.video?.poster?.type === 'field') addFieldVariable(vars.video.poster as any);
+
+    // --- audio.src ---
+    if (vars.audio?.src?.type === 'field') addFieldVariable(vars.audio.src as any);
+
+    // --- backgroundImage.src ---
+    if (vars.backgroundImage?.src?.type === 'field') addFieldVariable(vars.backgroundImage.src as any);
+
+    // --- link.field ---
+    if (vars.link?.field?.type === 'field') addFieldVariable(vars.link.field);
+
+    // --- link.url / link.email / link.phone (dynamic text with inline vars) ---
+    for (const k of ['url', 'email', 'phone'] as const) {
+      const lv = (vars.link as any)?.[k];
+      if (lv?.type === 'dynamic_text') scanInlineVariableTags(lv.data.content);
+    }
+
+    // --- iframe.src ---
+    if (vars.iframe?.src?.type === 'dynamic_text') scanInlineVariableTags(vars.iframe.src.data.content);
+
+    // --- lightbox filesField ---
+    const lbf = layer.settings?.lightbox?.filesField;
+    if (lbf?.type === 'field') addFieldVariable(lbf as any);
+
+    // --- design color bindings ---
+    if (vars.design) {
+      for (const dcv of Object.values(vars.design)) {
+        scanDesignColorVariable(dcv);
+      }
+    }
+
+    // --- conditionalVisibility ---
+    if (vars.conditionalVisibility?.groups) {
+      for (const g of vars.conditionalVisibility.groups) {
+        for (const c of g.conditions) {
+          if (c.fieldId) {
+            fieldIds.add(c.fieldId);
+            fieldPaths.add(c.fieldId);
+          }
+        }
+      }
+    }
+
+    // --- collection filters & sort (on the collection layer itself) ---
+    if (vars.collection) {
+      const col = vars.collection;
+      if (col.filters?.groups) {
+        for (const g of col.filters.groups) {
+          for (const c of g.conditions) {
+            if (c.fieldId) {
+              fieldIds.add(c.fieldId);
+              fieldPaths.add(c.fieldId);
+            }
+          }
+        }
+      }
+      if (col.sort_by && col.sort_by !== 'none' && col.sort_by !== 'manual' && col.sort_by !== 'random') {
+        fieldIds.add(col.sort_by);
+        fieldPaths.add(col.sort_by);
+      }
+      if (col.source_field_id) {
+        fieldIds.add(col.source_field_id);
+        fieldPaths.add(col.source_field_id);
+      }
+    }
+
+    // --- settings.optionsSource.sortFieldId ---
+    if (layer.settings?.optionsSource?.sortFieldId) {
+      fieldIds.add(layer.settings.optionsSource.sortFieldId);
+      fieldPaths.add(layer.settings.optionsSource.sortFieldId);
+    }
+
+    // Recurse into children, but stop at layers that start a new collection scope
+    if (layer.children) {
+      for (const child of layer.children) {
+        if (child.variables?.collection?.id) continue;
+        scanLayer(child);
+      }
+    }
+  }
+
+  layers.forEach(scanLayer);
+  return { fieldIds, fieldPaths };
+}
+
 function collectAllCollectionIds(layers: Layer[]): Set<string> {
   const ids = new Set<string>();
   const scan = (layer: Layer) => {
@@ -1863,6 +2058,9 @@ function collectAllCollectionIds(layers: Layer[]): Set<string> {
 async function buildCollectionCache(
   collectionIds: Set<string>,
   isPublished: boolean,
+  boundFieldIds?: Set<string>,
+  boundFieldPaths?: Set<string>,
+  boundCollectionIds?: Set<string>,
 ): Promise<CollectionDataCache> {
   const empty: CollectionDataCache = {
     itemsByCollection: new Map(), totalByCollection: new Map(),
@@ -1892,11 +2090,34 @@ async function buildCollectionCache(
     .order('order', { ascending: true })
     .limit(5000);
 
-  // Discover referenced collections so we can pre-fetch their data too
+  // Discover referenced collections so we can pre-fetch their data too.
+  // When boundFieldIds is supplied, only follow reference fields that are bound.
   const refCollectionIds: string[] = [];
+  const refFieldIdToCollectionId = new Map<string, string>();
   for (const f of fieldsData || []) {
     if (f.type === 'reference' && f.reference_collection_id && !collectionIds.has(f.reference_collection_id)) {
-      refCollectionIds.push(f.reference_collection_id);
+      if (!boundFieldIds || boundFieldIds.has(f.id)) {
+        refCollectionIds.push(f.reference_collection_id);
+        refFieldIdToCollectionId.set(f.id, f.reference_collection_id);
+      }
+    }
+  }
+
+  // Build per-referenced-collection field filters from bound fieldPaths.
+  // For a path "refFieldId.targetFieldId", targetFieldId is needed from the ref collection.
+  const refCollectionBoundFieldIds = new Map<string, Set<string>>();
+  if (boundFieldPaths) {
+    for (const path of boundFieldPaths) {
+      const parts = path.split('.');
+      if (parts.length >= 2) {
+        const refFieldId = parts[0];
+        const targetFieldId = parts[1];
+        const refCollId = refFieldIdToCollectionId.get(refFieldId);
+        if (refCollId) {
+          if (!refCollectionBoundFieldIds.has(refCollId)) refCollectionBoundFieldIds.set(refCollId, new Set());
+          refCollectionBoundFieldIds.get(refCollId)!.add(targetFieldId);
+        }
+      }
     }
   }
 
@@ -1938,12 +2159,65 @@ async function buildCollectionCache(
     fieldTypeMap[f.id] = f.type;
   }
 
-  // Phase 3: Fetch all values for all items
-  const allItemIds = (itemsData || []).map((i: any) => i.id);
+  // Phase 3: Fetch values — filter by bound field IDs when available
   await warmKnexPromise;
-  const valuesByItem = allItemIds.length > 0
-    ? await getValuesByItemIds(allItemIds, isPublished, fieldTypeMap)
-    : {};
+
+  // Partition items: bound primary (have field filter) vs unbound primary (optionsSource etc.) vs ref
+  const boundPrimaryItemIds: string[] = [];
+  const unboundPrimaryItemIds: string[] = [];
+  const refItemIds: string[] = [];
+  for (const item of itemsData || []) {
+    if (!collectionIds.has(item.collection_id)) {
+      refItemIds.push(item.id);
+    } else if (boundCollectionIds?.has(item.collection_id)) {
+      boundPrimaryItemIds.push(item.id);
+    } else {
+      unboundPrimaryItemIds.push(item.id);
+    }
+  }
+
+  // Slug fields are always needed for URL building
+  const slugFieldIds: string[] = [];
+  for (const [, fields] of fieldsByCollection) {
+    const slug = fields.find(f => f.key === 'slug');
+    if (slug) slugFieldIds.push(slug.id);
+  }
+
+  // Build the field filter for primary collection items
+  let primaryFieldFilter: string[] | undefined;
+  if (boundFieldIds && boundFieldIds.size > 0) {
+    const merged = new Set(boundFieldIds);
+    for (const sid of slugFieldIds) merged.add(sid);
+    primaryFieldFilter = Array.from(merged);
+  }
+
+  // Build per-ref-collection field filter and merge into a single array for the batch call
+  let refFieldFilter: string[] | undefined;
+  if (refCollectionBoundFieldIds.size > 0) {
+    const merged = new Set<string>();
+    for (const [, fids] of refCollectionBoundFieldIds) {
+      for (const fid of fids) merged.add(fid);
+    }
+    for (const sid of slugFieldIds) merged.add(sid);
+    refFieldFilter = Array.from(merged);
+  }
+
+  // Fetch values: filtered for bound collections, unfiltered for optionsSource/other collections
+  const valueFetches: Promise<Record<string, Record<string, any>>>[] = [];
+  if (boundPrimaryItemIds.length > 0) {
+    valueFetches.push(getValuesByItemIds(boundPrimaryItemIds, isPublished, fieldTypeMap, primaryFieldFilter));
+  }
+  if (unboundPrimaryItemIds.length > 0) {
+    valueFetches.push(getValuesByItemIds(unboundPrimaryItemIds, isPublished, fieldTypeMap));
+  }
+  if (refItemIds.length > 0) {
+    valueFetches.push(getValuesByItemIds(refItemIds, isPublished, fieldTypeMap, refFieldFilter));
+  }
+  const valuesByItem: Record<string, Record<string, any>> = {};
+  if (valueFetches.length > 0) {
+    const results = await Promise.all(valueFetches);
+    for (const r of results) Object.assign(valuesByItem, r);
+  }
 
   // Build items-with-values grouped by collection + flat index
   const itemsByCollection = new Map<string, CollectionItemWithValues[]>();
@@ -1984,8 +2258,35 @@ export async function resolveCollectionLayers(
     timezone = (await getSettingByKey('timezone') as string | null) || 'UTC';
   }
 
-  // Pre-fetch all collection data in bulk (3 queries total instead of 6-7 per collection)
-  const cache = await buildCollectionCache(collectAllCollectionIds(layers), isPublished);
+  // Scan all collection layers to determine which field IDs are actually used in templates
+  const allCollectionIds = collectAllCollectionIds(layers);
+  const mergedBoundFieldIds = new Set<string>();
+  const mergedBoundFieldPaths = new Set<string>();
+  const boundFieldPathsByLayerId = new Map<string, Set<string>>();
+  const scannedCollectionIds = new Set<string>();
+
+  function scanCollectionLayersForBounds(layerList: Layer[]) {
+    for (const layer of layerList) {
+      if (layer.variables?.collection?.id) {
+        const { fieldIds: fids, fieldPaths: fpaths } = collectBoundFieldIds([layer]);
+        for (const fid of fids) mergedBoundFieldIds.add(fid);
+        for (const fp of fpaths) mergedBoundFieldPaths.add(fp);
+        boundFieldPathsByLayerId.set(layer.id, fpaths);
+        scannedCollectionIds.add(layer.variables.collection.id);
+      }
+      if (layer.children) scanCollectionLayersForBounds(layer.children);
+    }
+  }
+  scanCollectionLayersForBounds(layers);
+
+  // Pre-fetch all collection data in bulk, filtered to bound fields
+  const cache = await buildCollectionCache(
+    allCollectionIds,
+    isPublished,
+    mergedBoundFieldIds.size > 0 ? mergedBoundFieldIds : undefined,
+    mergedBoundFieldPaths.size > 0 ? mergedBoundFieldPaths : undefined,
+    scannedCollectionIds.size > 0 ? scannedCollectionIds : undefined,
+  );
 
   const resolveLayer = async (
     layer: Layer,
@@ -2227,11 +2528,13 @@ export async function resolveCollectionLayers(
             return { item, translatedValues, rawTranslatedValues };
           });
 
+          const layerBoundPaths = boundFieldPathsByLayerId.get(layer.id);
           const allEnhancedValues = await batchResolveReferenceFields(
             preprocessed.map(p => p.translatedValues),
             collectionFields,
             isPublished,
             cache,
+            layerBoundPaths,
           );
           const clonedLayers: Layer[] = await Promise.all(
             preprocessed.map(async ({ item, rawTranslatedValues }, index) => {
@@ -2262,24 +2565,32 @@ export async function resolveCollectionLayers(
                 )
               );
 
+              // Filter _collectionItemValues to only bound paths (reduces payload in draft/preview)
+              let filteredValues = enhancedValues;
+              if (layerBoundPaths && layerBoundPaths.size > 0) {
+                filteredValues = {};
+                for (const key of Object.keys(enhancedValues)) {
+                  if (layerBoundPaths.has(key)) {
+                    filteredValues[key] = enhancedValues[key];
+                  }
+                }
+              }
+
               // Build the cloned layer with original IDs first
               const clonedLayer: Layer = {
-                ...layer,  // Clone all properties including classes, design, name, etc.
+                ...layer,
                 attributes: {
                   ...layer.attributes,
                   'data-collection-item-id': item.id,
                 } as Record<string, any>,
                 variables: {
                   ...layer.variables,
-                  collection: undefined,  // Remove collection binding from clone
+                  collection: undefined,
                 },
                 children: injectedChildren,
-                // Store enhanced item values (with resolved references) for visibility filtering (SSR only, not serialized to client)
-                _collectionItemValues: enhancedValues,
-                // Store item ID and slug for URL building in link resolution (SSR only)
+                _collectionItemValues: filteredValues,
                 _collectionItemId: item.id,
                 _collectionItemSlug: itemSlug,
-                // Store layer data map for layer-specific field resolution
                 _layerDataMap: updatedLayerDataMap,
               };
 
