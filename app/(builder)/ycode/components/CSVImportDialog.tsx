@@ -277,9 +277,16 @@ export function CSVImportDialog({
   const MAX_BODY_BYTES = 3_500_000;
   const MAX_BATCH_SIZE = 20;
 
-  /** Estimate the JSON byte size of a row. */
-  const estimateRowSize = (row: Record<string, string>): number =>
-    Object.values(row).reduce((sum, v) => sum + v.length, 0) * 2;
+  /** Strip columns mapped to __skip__ so we only send data the server needs. */
+  const stripSkippedColumns = (row: Record<string, string>): Record<string, string> => {
+    const stripped: Record<string, string> = {};
+    for (const [col, fieldId] of Object.entries(columnMapping)) {
+      if (fieldId && fieldId !== SKIP_COLUMN && col in row) {
+        stripped[col] = row[col];
+      }
+    }
+    return stripped;
+  };
 
   /** Build the next batch of rows that fits within the body size limit. */
   const buildBatch = (startIndex: number): Record<string, string>[] => {
@@ -287,9 +294,10 @@ export function CSVImportDialog({
     let estimatedSize = 0;
 
     for (let i = startIndex; i < rows.length && batch.length < MAX_BATCH_SIZE; i++) {
-      const rowSize = estimateRowSize(rows[i]);
+      const stripped = stripSkippedColumns(rows[i]);
+      const rowSize = Object.values(stripped).reduce((sum, v) => sum + v.length, 0) * 2;
       if (estimatedSize + rowSize > MAX_BODY_BYTES) break;
-      batch.push(rows[i]);
+      batch.push(stripped);
       estimatedSize += rowSize;
     }
 

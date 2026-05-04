@@ -188,8 +188,8 @@ function prepareRow(
   };
 }
 
-/** Max rows to process from storage in a single call (kept low to avoid OOM on large CSVs). */
-const STORAGE_BATCH_SIZE = 5;
+/** Process 1 row at a time from storage to keep peak memory low on large CSVs. */
+const STORAGE_BATCH_SIZE = 1;
 
 /**
  * Fallback: download and parse the CSV from Supabase Storage.
@@ -220,7 +220,9 @@ async function loadRowsFromStorage(
   }
 
   const csvText = await fileBlob.text();
+  console.warn(`[csv-import] Downloaded CSV from storage: ${(csvText.length / 1024 / 1024).toFixed(1)}MB, parsing...`);
   const parsed = parseCSVText(csvText);
+  console.warn(`[csv-import] Parsed ${parsed.rows.length} total rows, slicing [${startIndex}..${startIndex + STORAGE_BATCH_SIZE}]`);
   const rows = parsed.rows.slice(startIndex, startIndex + STORAGE_BATCH_SIZE);
 
   return { rows, supabase };
@@ -293,11 +295,15 @@ export async function POST(request: NextRequest) {
 
     if (clientRows && Array.isArray(clientRows) && clientRows.length > 0) {
       rowsToProcess = clientRows;
+      const bodySize = JSON.stringify(clientRows).length;
+      console.warn(`[csv-import] Client-driven batch: ${clientRows.length} rows, ~${(bodySize / 1024).toFixed(0)}KB body, startIndex=${startIndex}`);
     } else {
+      console.warn(`[csv-import] Storage fallback: no client rows, startIndex=${startIndex}`);
       const storageResult = await loadRowsFromStorage(csvMeta, startIndex);
       rowsToProcess = storageResult.rows;
       supabaseForCleanup = storageResult.supabase;
       isStorageFallback = true;
+      console.warn(`[csv-import] Storage loaded ${rowsToProcess.length} rows (STORAGE_BATCH_SIZE=${STORAGE_BATCH_SIZE})`);
     }
 
     if (rowsToProcess.length === 0) {
@@ -391,6 +397,7 @@ export async function POST(request: NextRequest) {
     ]);
 
     if (allUniqueUrls.size > 0) {
+      console.warn(`[csv-import] Processing ${allUniqueUrls.size} unique asset URLs (concurrency=${isStorageFallback ? 1 : 10})`);
       // 1) Extract filenames from all URLs and batch-query existing assets (1 DB query)
       const urlToFilename = new Map<string, string>();
       const filenamesToCheck: string[] = [];
@@ -420,7 +427,7 @@ export async function POST(request: NextRequest) {
 
       // 3) Download + upload only the URLs not already in the DB (parallel, batched)
       // Lower concurrency for storage fallback to leave memory for the CSV parse overhead
-      const ASSET_CONCURRENCY = isStorageFallback ? 3 : 10;
+      const ASSET_CONCURRENCY = isStorageFallback ? 1 : 10;
       for (let i = 0; i < urlsToDownload.length; i += ASSET_CONCURRENCY) {
         const batch = urlsToDownload.slice(i, i + ASSET_CONCURRENCY);
         const results = await Promise.allSettled(
