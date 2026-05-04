@@ -6,7 +6,7 @@ import {
   completeImport,
 } from '@/lib/repositories/collectionImportRepository';
 import { createItemsBulk, deleteItem, getMaxIdValue, getMaxManualOrder } from '@/lib/repositories/collectionItemRepository';
-import { insertValuesBulk } from '@/lib/repositories/collectionItemValueRepository';
+import { insertValuesBulk, insertValuesDirectPg } from '@/lib/repositories/collectionItemValueRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import {
   convertValueForFieldType,
@@ -498,9 +498,7 @@ export async function POST(request: NextRequest) {
             const hasLargeValue = row.values.some(v => (v.value?.length ?? 0) > LARGE_VALUE_THRESHOLD);
 
             if (hasLargeValue) {
-              for (const val of row.values) {
-                await insertValuesBulk([val]);
-              }
+              await insertValuesDirectPg(row.values);
             } else {
               await insertValuesBulk(row.values);
             }
