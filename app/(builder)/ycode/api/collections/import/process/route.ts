@@ -416,7 +416,7 @@ export async function POST(request: NextRequest) {
       }
 
       // 3) Download + upload only the URLs not already in the DB (parallel, batched)
-      const ASSET_CONCURRENCY = 20;
+      const ASSET_CONCURRENCY = 5;
       for (let i = 0; i < urlsToDownload.length; i += ASSET_CONCURRENCY) {
         const batch = urlsToDownload.slice(i, i + ASSET_CONCURRENCY);
         const results = await Promise.allSettled(
