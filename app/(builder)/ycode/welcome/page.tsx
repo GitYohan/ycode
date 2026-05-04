@@ -17,6 +17,7 @@ import {
   completeSetup,
   checkEmailConfirmDisabled,
 } from '@/lib/api/setup';
+import { resetBrowserClient } from '@/lib/supabase-browser';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,7 +34,27 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import BuilderLoading from '@/components/BuilderLoading';
 import { Spinner } from '@/components/ui/spinner';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TemplateGallery } from '@/components/templates/TemplateGallery';
+
+type HostingType = 'cloud' | 'self-hosted';
+
+function EnvFileHint({ envVar }: { envVar: string }) {
+  return (
+    <>Find <span className="text-white/85">{envVar}</span> in your <span className="text-white/85">.env</span> file, next to <span className="text-white/85">docker-compose.yml</span>.</>
+  );
+}
+
+function HostingTabs({ value, onChange }: { value: HostingType; onChange: (v: HostingType) => void }) {
+  return (
+    <Tabs value={value} onValueChange={(v) => onChange(v as HostingType)}>
+      <TabsList className="w-full">
+        <TabsTrigger value="cloud" className="flex-1">Supabase Cloud</TabsTrigger>
+        <TabsTrigger value="self-hosted" className="flex-1">Self-hosted Supabase</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+}
 
 function LogoBottomRight() {
   return (
@@ -97,6 +118,10 @@ export default function WelcomePage() {
   const [connectionUrl, setConnectionUrl] = useState(supabaseConfig?.connectionUrl || '');
   const [dbPassword, setDbPassword] = useState(supabaseConfig?.dbPassword || '');
   const [supabaseUrl, setSupabaseUrl] = useState(supabaseConfig?.supabaseUrl || '');
+  const [hostingType, setHostingType] = useState<HostingType>(
+    supabaseConfig?.supabaseUrl ? 'self-hosted' : 'cloud'
+  );
+  const isSelfHosted = hostingType === 'self-hosted';
 
   // Email confirmation setting check
   const [emailConfirmDisabled, setEmailConfirmDisabled] = useState(false);
@@ -276,7 +301,7 @@ export default function WelcomePage() {
 
               <div className="border-t-2 border-white py-4 flex flex-col gap-0.5">
                 <Label variant="muted">Step 1</Label>
-                <Label size="sm">Vercel + Supabase</Label>
+                <Label size="sm">{isSelfHosted ? 'Vercel + Self-hosted' : 'Vercel + Supabase'}</Label>
               </div>
 
               <div className="border-t-2 border-white/50 py-4 flex flex-col gap-0.5 opacity-50">
@@ -294,6 +319,8 @@ export default function WelcomePage() {
             <div className="w-full max-w-xl py-10">
 
               <FieldGroup className="animate-in fade-in slide-in-from-bottom-1 duration-700" style={{ animationFillMode: 'both' }}>
+
+                <HostingTabs value={hostingType} onChange={setHostingType} />
 
                 {error && (
                   <Alert>
@@ -329,7 +356,10 @@ export default function WelcomePage() {
                         </InputGroupAddon>
                       </InputGroup>
                       <FieldDescription>
-                        Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.
+                        {isSelfHosted
+                          ? <EnvFileHint envVar="ANON_KEY" />
+                          : <>Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.</>
+                        }
                       </FieldDescription>
                     </Field>
 
@@ -352,7 +382,10 @@ export default function WelcomePage() {
                         </InputGroupAddon>
                       </InputGroup>
                       <FieldDescription>
-                        Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.
+                        {isSelfHosted
+                          ? <EnvFileHint envVar="SERVICE_ROLE_KEY" />
+                          : <>Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.</>
+                        }
                       </FieldDescription>
                     </Field>
 
@@ -375,7 +408,10 @@ export default function WelcomePage() {
                         </InputGroupAddon>
                       </InputGroup>
                       <FieldDescription>
-                        Find it in <span className="text-white/85">Supabase → Connect → Connection String → Method: Transaction pooler</span>.
+                        {isSelfHosted
+                          ? <>Requires a direct Postgres connection. In <span className="text-white/85">docker-compose.yml</span>, add <span className="text-white/85">&quot;54322:5432&quot;</span> to the <span className="text-white/85">db</span> service ports, then restart. Connect as <span className="text-white/85">supabase_admin</span> with <span className="text-white/85">POSTGRES_PASSWORD</span> from your <span className="text-white/85">.env</span> file.</>
+                          : <>Find it in <span className="text-white/85">Supabase → Connect → Connection String → Method: Transaction pooler</span>.</>
+                        }
                       </FieldDescription>
                     </Field>
 
@@ -398,32 +434,37 @@ export default function WelcomePage() {
                         </InputGroupAddon>
                       </InputGroup>
                       <FieldDescription>
-                        The database password was created with the project. It can be reset in <span className="text-white/85">Database → Settings</span>.
+                        {isSelfHosted
+                          ? <EnvFileHint envVar="POSTGRES_PASSWORD" />
+                          : <>The database password was created with the project. It can be reset in <span className="text-white/85">Database → Settings</span>.</>
+                        }
                       </FieldDescription>
                     </Field>
 
-                    <Field>
-                      <InputGroup size="sm">
-                        <InputGroupInput
-                          value="SUPABASE_URL" size="sm"
-                          readOnly
-                        />
-                        <InputGroupAddon align="inline-end">
-                          <Button
-                            size="xs"
-                            variant="secondary"
-                            className="mr-1"
-                            onClick={() => handleCopy('SUPABASE_URL', 'supabaseurl')}
-                          >
-                            <Icon name={copiedField === 'supabaseurl' ? 'check' : 'copy'} />
-                            {copiedField === 'supabaseurl' ? 'Copied' : 'Copy'}
-                          </Button>
-                        </InputGroupAddon>
-                      </InputGroup>
-                      <FieldDescription>
-                        <span className="text-white/85">Optional</span> — only needed for self-hosted Supabase instances. Set to your Supabase API URL (e.g. <span className="text-white/85">https://supabase.my-company.com</span>).
-                      </FieldDescription>
-                    </Field>
+                    {isSelfHosted && (
+                      <Field>
+                        <InputGroup size="sm">
+                          <InputGroupInput
+                            value="SUPABASE_URL" size="sm"
+                            readOnly
+                          />
+                          <InputGroupAddon align="inline-end">
+                            <Button
+                              size="xs"
+                              variant="secondary"
+                              className="mr-1"
+                              onClick={() => handleCopy('SUPABASE_URL', 'supabaseurl')}
+                            >
+                              <Icon name={copiedField === 'supabaseurl' ? 'check' : 'copy'} />
+                              {copiedField === 'supabaseurl' ? 'Copied' : 'Copy'}
+                            </Button>
+                          </InputGroupAddon>
+                        </InputGroup>
+                        <FieldDescription>
+                          <span className="text-white/85">Required</span> — your Supabase API gateway URL (e.g. <span className="text-white/85">https://supabase.my-company.com</span>).
+                        </FieldDescription>
+                      </Field>
+                    )}
 
                   </FieldGroup>
 
@@ -475,6 +516,12 @@ export default function WelcomePage() {
         setLoading(true);
         setError(null);
 
+        if (isSelfHosted && !supabaseUrl) {
+          setError('Supabase API URL is required for self-hosted instances.');
+          setLoading(false);
+          return;
+        }
+
         const config: SupabaseConfig = {
           anonKey,
           serviceRoleKey,
@@ -492,6 +539,7 @@ export default function WelcomePage() {
           }
 
           setSupabaseConfig(config);
+          resetBrowserClient();
 
           // Go to migration step
           setStep('migrate');
@@ -533,6 +581,9 @@ export default function WelcomePage() {
               <form onSubmit={handleSubmit} className="">
 
                 <FieldGroup className="animate-in fade-in slide-in-from-bottom-1 duration-700" style={{ animationFillMode: 'both' }}>
+
+                  <HostingTabs value={hostingType} onChange={setHostingType} />
+
                   <FieldSet>
                     <FieldGroup className="gap-8">
 
@@ -553,7 +604,10 @@ export default function WelcomePage() {
                           size="sm"
                         />
                         <FieldDescription>
-                          Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.
+                          {isSelfHosted
+                            ? <EnvFileHint envVar="ANON_KEY" />
+                            : <>Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.</>
+                          }
                         </FieldDescription>
                       </Field>
 
@@ -568,12 +622,15 @@ export default function WelcomePage() {
                           size="sm"
                         />
                         <FieldDescription>
-                          Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.
+                          {isSelfHosted
+                            ? <EnvFileHint envVar="SERVICE_ROLE_KEY" />
+                            : <>Find it in <span className="text-white/85">Supabase → Project settings → API keys</span>.</>
+                          }
                         </FieldDescription>
                       </Field>
 
                       <Field>
-                        <FieldLabel htmlFor="connection_url" size="sm">Pooler connection URL</FieldLabel>
+                        <FieldLabel htmlFor="connection_url" size="sm">{isSelfHosted ? 'Database connection URL' : 'Pooler connection URL'}</FieldLabel>
                         <Input
                           type="text"
                           id="connection_url"
@@ -582,14 +639,18 @@ export default function WelcomePage() {
                           onChange={(e) => setConnectionUrl(e.target.value)}
                           required
                           size="sm"
+                          placeholder={isSelfHosted ? 'postgresql://supabase_admin:password@localhost:54322/postgres' : undefined}
                         />
                         <FieldDescription>
-                          Find it in <span className="text-white/85">Supabase → Connect → Connection String → Method: Transaction pooler</span>.
+                          {isSelfHosted
+                            ? <>Requires a direct Postgres connection. In <span className="text-white/85">docker-compose.yml</span>, add <span className="text-white/85">&quot;54322:5432&quot;</span> to the <span className="text-white/85">db</span> service ports, then restart. Connect as <span className="text-white/85">supabase_admin</span> with <span className="text-white/85">POSTGRES_PASSWORD</span> from your <span className="text-white/85">.env</span> file.</>
+                            : <>Find it in <span className="text-white/85">Supabase → Connect → Connection String → Method: Transaction pooler</span>.</>
+                          }
                         </FieldDescription>
                       </Field>
 
                       <Field>
-                        <FieldLabel htmlFor="db_password" size="sm">Database Password</FieldLabel>
+                        <FieldLabel htmlFor="db_password" size="sm">Database password</FieldLabel>
                         <Input
                           type="password"
                           id="db_password"
@@ -600,25 +661,31 @@ export default function WelcomePage() {
                           size="sm"
                         />
                         <FieldDescription>
-                          The database password was created with the project. It can be reset in <span className="text-white/85">Database → Settings</span>.
+                          {isSelfHosted
+                            ? <EnvFileHint envVar="POSTGRES_PASSWORD" />
+                            : <>The database password was created with the project. It can be reset in <span className="text-white/85">Database → Settings</span>.</>
+                          }
                         </FieldDescription>
                       </Field>
 
-                      <Field>
-                        <FieldLabel htmlFor="supabase_url" size="sm">Supabase API URL <span className="text-muted-foreground font-normal">(optional)</span></FieldLabel>
-                        <Input
-                          type="url"
-                          id="supabase_url"
-                          name="supabase_url"
-                          placeholder="https://supabase.my-company.com"
-                          value={supabaseUrl}
-                          onChange={(e) => setSupabaseUrl(e.target.value)}
-                          size="sm"
-                        />
-                        <FieldDescription>
-                          Only needed for <span className="text-white/85">self-hosted Supabase</span> instances. Leave empty when using Supabase Cloud.
-                        </FieldDescription>
-                      </Field>
+                      {isSelfHosted && (
+                        <Field>
+                          <FieldLabel htmlFor="supabase_url" size="sm">Supabase API URL</FieldLabel>
+                          <Input
+                            type="url"
+                            id="supabase_url"
+                            name="supabase_url"
+                            placeholder="http://localhost:8000"
+                            value={supabaseUrl}
+                            onChange={(e) => setSupabaseUrl(e.target.value)}
+                            required
+                            size="sm"
+                          />
+                          <FieldDescription>
+                            Your Supabase API gateway URL. Typically <span className="text-white/85">http://localhost:8000</span> for local Docker setups.
+                          </FieldDescription>
+                        </Field>
+                      )}
 
                       <div className="flex flex-col gap-2 mt-4">
                         <Button
@@ -860,19 +927,35 @@ export default function WelcomePage() {
               <div className="flex flex-col items-center gap-1">
                 <Label size="sm">Adjust Supabase authentication settings</Label>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  In your Supabase project, find and disable the setting below.
+                  {isSelfHosted
+                    ? 'In your Supabase .env file, find and update the setting below, then restart your Docker containers.'
+                    : 'In your Supabase project, find and disable the setting below.'
+                  }
                 </p>
               </div>
-              <div className="flex items-center gap-2 bg-white/5 rounded-lg px-4 py-2.5 text-sm text-white/90">
-                <span>Authentication</span>
-                <span className="text-muted-foreground">→</span>
-                <span>Sign In / Providers</span>
-                <span className="text-muted-foreground">→</span>
-                <span className="font-medium">Confirm email</span>
-              </div>
-              <p className="text-xs text-muted-foreground max-w-sm">
-                The confirmation email is not needed.
-              </p>
+              {isSelfHosted ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2 bg-white/5 rounded-lg px-4 py-2.5 text-sm text-white/90 font-mono">
+                    ENABLE_EMAIL_AUTOCONFIRM=true
+                  </div>
+                  <p className="text-xs text-muted-foreground max-w-sm">
+                    Find this in your <span className="text-white/85">.env</span> file, next to <span className="text-white/85">docker-compose.yml</span>.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 bg-white/5 rounded-lg px-4 py-2.5 text-sm text-white/90">
+                    <span>Authentication</span>
+                    <span className="text-muted-foreground">→</span>
+                    <span>Sign In / Providers</span>
+                    <span className="text-muted-foreground">→</span>
+                    <span className="font-medium">Confirm email</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground max-w-sm">
+                    The confirmation email is not needed.
+                  </p>
+                </>
+              )}
             </div>
 
             {error && (
