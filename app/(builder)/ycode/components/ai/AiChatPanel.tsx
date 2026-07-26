@@ -1002,14 +1002,32 @@ function groupParts(parts: ChatMessagePart[]): PartGroup[] {
   return groups;
 }
 
+/**
+ * Cheap markdown-syntax stripper for live-streamed narration. Re-parsing real
+ * markdown (marked + DOMPurify) on every streamed token is expensive and
+ * flickers on half-written syntax, but raw markers like **Publish** must never
+ * reach the user either — so streaming text drops the syntax and renders the
+ * words plain. Tolerates unterminated markers mid-stream.
+ */
+function stripMarkdownSyntax(text: string): string {
+  return text
+    .replace(/^```[^\n]*$/gm, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/^>\s?/gm, '')
+    .replace(/\*\*|__/g, '')
+    .replace(/`/g, '')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    // Links: keep the label; a partially streamed "[label](htt" keeps the label.
+    .replace(/!?\[([^\]]*)\]\(([^)]*)\)?/g, '$1');
+}
+
 /** The intermediate narration + tool steps, shown inside the collapsed trail.
  * Narration text is dimmed so the closing summary below stays the focus.
  *
- * While streaming, narration is rendered as plain text rather than markdown:
- * the text grows a token at a time and re-parsing markdown (marked + DOMPurify)
- * on every token is expensive and flickers on half-written syntax. The trail
- * collapses once the turn finishes, so the full markdown render only runs when
- * the user re-expands it. */
+ * While streaming, narration is rendered as markdown-stripped plain text (see
+ * stripMarkdownSyntax). The trail collapses once the turn finishes, so the
+ * full markdown render only runs when the user re-expands it. */
 function ThinkingTrail({ parts, streaming }: { parts: ChatMessagePart[]; streaming: boolean }) {
   // Failed tool calls are hidden: the agent retries after errors, so showing
   // red X rows only alarms the user about steps that were already recovered.
@@ -1029,7 +1047,7 @@ function ThinkingTrail({ parts, streaming }: { parts: ChatMessagePart[]; streami
         ) : (
           <div key={index} className="opacity-60">
             {streaming ? (
-              <div className="text-xs leading-relaxed break-words whitespace-pre-wrap">{group.text}</div>
+              <div className="text-xs leading-relaxed break-words whitespace-pre-wrap">{stripMarkdownSyntax(group.text)}</div>
             ) : (
               <MarkdownText text={group.text} />
             )}
