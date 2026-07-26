@@ -455,7 +455,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
     <div className="flex-1 min-h-0 flex flex-col justify-start gap-4 p-3">
       {composer}
       {error && (
-        <div className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+        <div className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2 break-words">
           {error}
         </div>
       )}
@@ -585,7 +585,7 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
               ))}
 
               {error && (
-                <div className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                <div className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2 break-words">
                   {error}
                 </div>
               )}
