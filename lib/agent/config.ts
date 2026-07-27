@@ -21,6 +21,18 @@ export const DEFAULT_MAX_TOKENS = 8192;
 export const MAX_TOOL_TURNS = 24;
 
 /**
+ * Wall-clock budget for one agent run. The chat route's exported `maxDuration`
+ * (app/(builder)/ycode/api/ai/chat/route.ts) hard-kills the function without
+ * streaming anything, leaving the turn silently truncated. The agent loop stops
+ * starting new turns once this budget is spent, so long runs end gracefully:
+ * page/component snapshots and usage are emitted, and the user gets a
+ * resumable "ran out of time" error instead of a silent cut. The buffer below
+ * `maxDuration` must cover one full provider turn plus its tool calls and the
+ * end-of-run snapshot/CSS work.
+ */
+export const MAX_RUN_MS = 740_000; // maxDuration (800s) minus a 60s buffer
+
+/**
  * Cross-turn conversation history budget, applied before the agent runs so a long
  * chat can't blow past the model's context window (the failure where the agent
  * silently stops editing on big histories). The oldest turns are dropped first.
@@ -169,12 +181,18 @@ export async function resolveAgentConfig(userId?: string | null): Promise<Resolv
   return { providers, configured, agentEnabled, model, enabledModels };
 }
 
-/** Coerce a stored enabled-models value into a valid non-empty allowlist subset. */
+/**
+ * Coerce a stored enabled-models value into a valid non-empty allowlist subset.
+ * Legacy models stay valid when a stored list already includes them, but the
+ * default (nothing stored / nothing valid) excludes them so no new project
+ * picks up a superseded model.
+ */
 export function sanitizeEnabledModels(value: unknown): string[] {
   const allIds = AGENT_MODELS.map((option) => option.id);
-  if (!Array.isArray(value)) return allIds;
+  const defaultIds = AGENT_MODELS.filter((option) => !option.legacy).map((option) => option.id);
+  if (!Array.isArray(value)) return defaultIds;
   const valid = allIds.filter((id) => value.includes(id));
-  return valid.length > 0 ? valid : allIds;
+  return valid.length > 0 ? valid : defaultIds;
 }
 
 function isAllowedModelId(id: string): boolean {
