@@ -6,7 +6,7 @@
  * still resolved server-side from settings/env in `lib/agent/config.ts`.
  */
 
-export type AgentProviderId = 'anthropic' | 'openai' | 'google';
+export type AgentProviderId = 'anthropic' | 'openai' | 'google' | 'xai';
 
 export interface AgentProviderOption {
   id: AgentProviderId;
@@ -45,6 +45,14 @@ export const AGENT_PROVIDERS: AgentProviderOption[] = [
     consoleUrl: 'https://aistudio.google.com/apikey',
     consoleLabel: 'Google AI Studio',
   },
+  {
+    id: 'xai',
+    label: 'xAI (Grok)',
+    envVar: 'XAI_API_KEY',
+    keyPlaceholder: 'xai-...',
+    consoleUrl: 'https://console.x.ai',
+    consoleLabel: 'xAI Console',
+  },
 ];
 
 export interface AgentModelOption {
@@ -60,6 +68,8 @@ export const AGENT_MODELS: AgentModelOption[] = [
   { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai' },
   { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'google' },
   { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash', provider: 'google' },
+  { id: 'grok-4.5', label: 'Grok 4.5', provider: 'xai' },
+  { id: 'grok-4.3', label: 'Grok 4.3', provider: 'xai' },
 ];
 
 /**
@@ -86,6 +96,7 @@ const REVIEW_MODEL_BY_PROVIDER: Record<AgentProviderId, string> = {
   anthropic: 'claude-haiku-4-5',
   openai: 'gpt-5-mini',
   google: 'gemini-3.5-flash',
+  xai: 'grok-4.3',
 };
 
 /** The self-review model matching the given main model's provider. */
@@ -151,6 +162,10 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-5-mini': { input: 0.25, output: 2, cacheWrite: 0.25, cacheRead: 0.025 },
   'gemini-3.1-pro-preview': { input: 2, output: 12, cacheWrite: 2, cacheRead: 0.2 },
   'gemini-3.5-flash': { input: 1.5, output: 9, cacheWrite: 1.5, cacheRead: 0.15 },
+  // xAI standard-context rates (< 200k prompt tokens); like OpenAI, xAI caches
+  // automatically and doesn't bill cache writes separately.
+  'grok-4.5': { input: 2, output: 6, cacheWrite: 2, cacheRead: 0.3 },
+  'grok-4.3': { input: 1.25, output: 2.5, cacheWrite: 1.25, cacheRead: 0.2 },
 };
 
 export interface TokenUsageBreakdown {

@@ -36,6 +36,7 @@ export const PROVIDER_KEY_SETTINGS: Record<AgentProviderId, string> = {
   anthropic: 'ai_anthropic_api_key',
   openai: 'ai_openai_api_key',
   google: 'ai_google_api_key',
+  xai: 'ai_xai_api_key',
 };
 
 export const SETTING_MODEL = 'ai_model';
@@ -101,6 +102,7 @@ const PROVIDER_ENV_KEYS: Record<AgentProviderId, string[]> = {
   openai: ['OPENAI_API_KEY'],
   // GOOGLE_API_KEY is the older alias the Google SDK also honors.
   google: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+  xai: ['XAI_API_KEY'],
 };
 
 /**

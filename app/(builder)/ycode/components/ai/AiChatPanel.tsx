@@ -757,6 +757,7 @@ const PROVIDER_SHORT_LABELS: Record<AgentProviderId, string> = {
   anthropic: 'Claude',
   openai: 'OpenAI',
   google: 'Google Gemini',
+  xai: 'Grok',
 };
 
 /** Brand icons keyed by provider (registered in the Icon component). */
@@ -764,6 +765,7 @@ const PROVIDER_ICONS: Record<AgentProviderId, IconProps['name']> = {
   anthropic: 'claude',
   openai: 'openai',
   google: 'gemini',
+  xai: 'grok',
 };
 
 /** Shown when no AI provider is configured: offers a one-click setup dialog for

@@ -4,6 +4,7 @@ import { isAllowedModel, isReviewModel, providerOfModel } from '@/lib/agent/mode
 import { createAnthropicProvider } from './anthropic';
 import { createGoogleProvider } from './google';
 import { createOpenAiProvider } from './openai';
+import { createXaiProvider } from './xai';
 
 import type { AgentProviderId } from '@/lib/agent/models';
 import type { AgentProvider } from './types';
@@ -11,8 +12,8 @@ import type { AgentProvider } from './types';
 /**
  * Provider selection.
  *
- * The open-source build ships BYOK providers for Anthropic, OpenAI, and Google
- * Gemini, picked by the model the request runs on. The Ycode Cloud overlay
+ * The open-source build ships BYOK providers for Anthropic, OpenAI, Google
+ * Gemini, and xAI Grok, picked by the model the request runs on. The Ycode Cloud overlay
  * calls `registerHostedProvider` at startup to take over for hosted tenants —
  * so the hosted implementation lives entirely in the overlay and is simply
  * absent from self-host builds.
@@ -33,12 +34,14 @@ const PROVIDER_FACTORIES: Record<AgentProviderId, (apiKey: string) => AgentProvi
   anthropic: createAnthropicProvider,
   openai: createOpenAiProvider,
   google: createGoogleProvider,
+  xai: createXaiProvider,
 };
 
 const PROVIDER_LABELS: Record<AgentProviderId, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   google: 'Google Gemini',
+  xai: 'xAI',
 };
 
 /**
@@ -96,7 +99,7 @@ export async function getAgentProvider(
 
   if (!config.configured) {
     throw new AgentConfigurationError(
-      'No AI agent connected. Add an Anthropic, OpenAI, or Google Gemini API key in Settings → Agent to use the AI builder.',
+      'No AI agent connected. Add an Anthropic, OpenAI, Google Gemini, or xAI API key in Settings → Agent to use the AI builder.',
     );
   }
 
