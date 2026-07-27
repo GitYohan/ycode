@@ -69,6 +69,9 @@ export interface ChatMessage {
   canRevert?: boolean;
   /** True once this turn's changes have been reverted (Redo re-applies them). */
   reverted?: boolean;
+  /** Why the turn failed (humanized provider error, e.g. out of credits).
+   * Persisted so reloaded chats and the admin transcript explain empty turns. */
+  error?: string;
 }
 
 type ChatStatus = 'idle' | 'streaming';
@@ -433,6 +436,7 @@ function stripMessageForStorage(message: ChatMessage): ChatMessage {
     changes: message.changes,
     review: message.review,
     model: message.model,
+    error: message.error,
     // Keep the reference metadata so @page/component/layer badges re-render
     // when a chat is reloaded from history (the raw "@label" text alone can't
     // reconstruct the pill's type/icon).
@@ -597,7 +601,7 @@ export const useAiChatStore = create<AiChatStore>()(
 
           if (!response.ok || !response.body) {
             const message = await safeErrorMessage(response);
-            patchAssistant((m) => ({ ...m, text: m.text || message }));
+            patchAssistant((m) => ({ ...m, error: message }));
             set({ error: message });
             return;
           }
@@ -605,7 +609,9 @@ export const useAiChatStore = create<AiChatStore>()(
           await consumeSse(response.body, (event) => applyEvent(event, patchAssistant, set));
         } catch (error) {
           if ((error as Error).name === 'AbortError') return;
-          set({ error: error instanceof Error ? error.message : 'Something went wrong' });
+          const message = error instanceof Error ? error.message : 'Something went wrong';
+          patchAssistant((m) => ({ ...m, error: message }));
+          set({ error: message });
           return;
         }
 
@@ -1376,6 +1382,10 @@ function applyEvent(
       }));
       break;
     case 'error':
+      // Record the failure on the turn itself (persisted with the chat) so
+      // reloaded transcripts explain why an assistant turn is empty, and keep
+      // the store-level error for the live banner.
+      patchAssistant((m) => ({ ...m, error: event.message }));
       set({ error: event.message });
       break;
     case 'done':

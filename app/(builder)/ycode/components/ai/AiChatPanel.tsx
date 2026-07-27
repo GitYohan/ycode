@@ -621,7 +621,12 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
                 />
               ))}
 
-              {error && <ErrorNotice message={error} />}
+              {/* Turn failures render inside their own bubble (message.error),
+                  so the trailing banner only shows errors that never attached
+                  to a message (e.g. a failed chat load). */}
+              {error && messages[messages.length - 1]?.error !== error && (
+                <ErrorNotice message={error} />
+              )}
             </div>
 
             {showJumpToLatest && (
@@ -959,6 +964,8 @@ const MessageBubble = memo(function MessageBubble({
       {!isActivelyStreaming && shortSummary && <MarkdownText text={shortSummary} />}
 
       {!isActivelyStreaming && plainText && <MarkdownText text={plainText} />}
+
+      {!isActivelyStreaming && message.error && <ErrorNotice message={message.error} />}
     </div>
   );
 });
