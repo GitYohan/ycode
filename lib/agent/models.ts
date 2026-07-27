@@ -59,6 +59,9 @@ export interface AgentModelOption {
   id: string;
   label: string;
   provider: AgentProviderId;
+  /** Superseded model: still selectable if already enabled, but excluded from
+   * the default enabled set so new projects don't pick it up. */
+  legacy?: boolean;
 }
 
 export const AGENT_MODELS: AgentModelOption[] = [
