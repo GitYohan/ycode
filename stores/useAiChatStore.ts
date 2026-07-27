@@ -332,6 +332,43 @@ function buildReviewPrompt(pageId: string): string {
   );
 }
 
+/**
+ * Prior turns as plain text for the model. Auto-review turns are excluded:
+ * they're self-contained (screenshot + review instruction + one-sentence
+ * reply), and replayed as history the instruction ("do not make changes for
+ * the sake of it", "reply with at most one short sentence") reads like a
+ * standing order — models then answer later, unrelated requests with
+ * "Looks good — no changes needed." instead of doing the work. Any fixes a
+ * review pass made are still visible to the next turn via the fresh page
+ * snapshot injected server-side. Assistant turns that only ran tools still
+ * contribute a placeholder so user/assistant roles keep alternating.
+ */
+function buildModelHistory(messages: ChatMessage[]): Array<{ role: ChatMessage['role']; content: string }> {
+  const history: Array<{ role: ChatMessage['role']; content: string }> = [];
+  let skippingReviewReply = false;
+
+  for (const message of messages) {
+    if (message.role === 'user') {
+      skippingReviewReply = message.review === true;
+      if (skippingReviewReply) continue;
+    } else if (skippingReviewReply || message.review) {
+      // The assistant half of a review turn. Older persisted chats only flag
+      // the user half, so pair-skip in addition to the explicit flag.
+      skippingReviewReply = false;
+      continue;
+    }
+
+    const content =
+      message.text.trim() ||
+      (message.role === 'assistant' && message.toolCalls.length > 0 ? '(made the requested edits)' : '');
+    if (content.length > 0) {
+      history.push({ role: message.role, content });
+    }
+  }
+
+  return history;
+}
+
 const READONLY_TOOL_PREFIXES = ['get_', 'list_', 'export_', 'search_'];
 
 /** Tools that change data/settings but not the current page's visual layout. */
@@ -534,6 +571,7 @@ export const useAiChatStore = create<AiChatStore>()(
           toolCalls: [],
           parts: [],
           model: turnModel,
+          review: isReview || undefined,
         };
 
         // Fallback Undo baseline: snapshot the active page before the turn in case
@@ -547,19 +585,11 @@ export const useAiChatStore = create<AiChatStore>()(
           }
         }
 
-        // History: prior turns as text. Assistant turns that only ran tools still
-        // contribute a placeholder so user/assistant roles keep alternating.
-        // Cap to the most recent turns to bound the wire payload (the server
-        // re-trims authoritatively against the model's context window).
-        const history = get()
-          .messages.map((message) => ({
-            role: message.role,
-            content:
-          message.text.trim() ||
-          (message.role === 'assistant' && message.toolCalls.length > 0 ? '(made the requested edits)' : ''),
-          }))
-          .filter((message) => message.content.length > 0)
-          .slice(-MAX_HISTORY_MESSAGES);
+        // History: prior turns as text, minus auto-review turns (see
+        // buildModelHistory). Cap to the most recent turns to bound the wire
+        // payload (the server re-trims authoritatively against the model's
+        // context window).
+        const history = buildModelHistory(get().messages).slice(-MAX_HISTORY_MESSAGES);
 
         set((state) => ({ messages: [...state.messages, userMessage, assistantMessage], error: null }));
 
