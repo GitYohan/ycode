@@ -59,14 +59,17 @@ export interface AgentModelOption {
   id: string;
   label: string;
   provider: AgentProviderId;
-  /** Superseded model: still selectable if already enabled, but excluded from
-   * the default enabled set so new projects don't pick it up. */
+  /** Superseded model kept for projects that already have it enabled. Legacy
+   * models are excluded from the default enabled set and hidden in settings
+   * unless present in the stored allowlist, so no new project can adopt them. */
   legacy?: boolean;
 }
 
 export const AGENT_MODELS: AgentModelOption[] = [
+  { id: 'claude-opus-5', label: 'Opus 5', provider: 'anthropic' },
+  { id: 'claude-fable-5', label: 'Fable 5', provider: 'anthropic' },
   { id: 'claude-sonnet-5', label: 'Sonnet 5', provider: 'anthropic' },
-  { id: 'claude-opus-4-8', label: 'Opus 4.8', provider: 'anthropic' },
+  { id: 'claude-opus-4-8', label: 'Opus 4.8', provider: 'anthropic', legacy: true },
   { id: 'gpt-5.5', label: 'GPT-5.5', provider: 'openai' },
   { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai' },
   { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'google' },
@@ -76,11 +79,12 @@ export const AGENT_MODELS: AgentModelOption[] = [
 ];
 
 /**
- * Model selected by default in the picker. Sonnet handles the builder workload
- * well at ~2.5x lower cost than Opus; users who want a different model (or
- * provider) can switch from the dropdown.
+ * Model selected by default in the picker. Opus 5 is Anthropic's recommended
+ * production tier and prices the same as the Opus 4.8 it replaces; users who
+ * want a cheaper (Sonnet 5) or stronger (Fable 5) model — or a different
+ * provider — can switch from the dropdown.
  */
-export const DEFAULT_AGENT_MODEL = 'claude-sonnet-5';
+export const DEFAULT_AGENT_MODEL = 'claude-opus-5';
 
 /**
  * Model for the automatic visual self-review pass, per provider. Critiquing a
@@ -157,6 +161,8 @@ interface ModelPricing {
  * the same as an uncached one).
  */
 const MODEL_PRICING: Record<string, ModelPricing> = {
+  'claude-opus-5': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+  'claude-fable-5': { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 1 },
   'claude-sonnet-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   'claude-opus-4-8': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   // Review-only fast tier (not in the picker). Estimate for the cost badge.
