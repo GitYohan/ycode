@@ -1455,6 +1455,12 @@ async function consumeSse(
 }
 
 async function safeErrorMessage(response: Response): Promise<string> {
+  // 413 comes from the platform's request-body limit before our code runs
+  // (no JSON body to parse), and in practice means the attached images are
+  // too large — say that instead of a bare status code.
+  if (response.status === 413) {
+    return 'Your message is too large to send — try smaller or fewer images.';
+  }
   try {
     const data = await response.json();
     return typeof data?.error === 'string' ? data.error : `Request failed (${response.status})`;
