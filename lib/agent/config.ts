@@ -27,16 +27,27 @@ export const DEFAULT_MAX_TOKENS = 16384;
 export const MAX_TOOL_TURNS = 24;
 
 /**
- * Wall-clock budget for one agent run. The chat route's exported `maxDuration`
- * (app/(builder)/ycode/api/ai/chat/route.ts) hard-kills the function without
- * streaming anything, leaving the turn silently truncated. The agent loop stops
- * starting new turns once this budget is spent, so long runs end gracefully:
- * page/component snapshots and usage are emitted, and the user gets a
- * resumable "ran out of time" error instead of a silent cut. The buffer below
- * `maxDuration` must cover one full provider turn plus its tool calls and the
- * end-of-run snapshot/CSS work.
+ * Wall-clock budget for one agent run. Vercel's `maxDuration` for the chat
+ * route (set in vercel.json, not in the route file) hard-kills the function
+ * without streaming anything, leaving the turn silently truncated. The agent
+ * loop stops starting new turns once this budget is spent, so long runs end
+ * gracefully: page/component snapshots and usage are emitted, and the user
+ * gets a resumable "ran out of time" error instead of a silent cut.
+ *
+ * The default matches vercel.json's 300s (the Vercel hobby-plan ceiling).
+ * Deployments that raise maxDuration in their own vercel.json (e.g. Ycode
+ * Cloud at 800s) must set AI_CHAT_MAX_DURATION (seconds) to the same value.
+ * The 60s buffer below `maxDuration` must cover one full provider turn plus
+ * its tool calls and the end-of-run snapshot/CSS work.
  */
-export const MAX_RUN_MS = 740_000; // maxDuration (800s) minus a 60s buffer
+const DEFAULT_AI_CHAT_MAX_DURATION_SECONDS = 300;
+const RUN_BUFFER_MS = 60_000;
+const configuredMaxDurationSeconds = Number(process.env.AI_CHAT_MAX_DURATION);
+
+export const MAX_RUN_MS =
+  (Number.isFinite(configuredMaxDurationSeconds) && configuredMaxDurationSeconds > 60
+    ? configuredMaxDurationSeconds
+    : DEFAULT_AI_CHAT_MAX_DURATION_SECONDS) * 1000 - RUN_BUFFER_MS;
 
 /**
  * Cross-turn conversation history budget, applied before the agent runs so a long
