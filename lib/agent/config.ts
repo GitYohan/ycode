@@ -14,8 +14,14 @@ import type { AgentProviderId } from '@/lib/agent/models';
 /** Default model when nothing is configured. Overridable via ANTHROPIC_MODEL or settings. */
 export const DEFAULT_ANTHROPIC_MODEL = DEFAULT_AGENT_MODEL;
 
-/** Max tokens per assistant turn. */
-export const DEFAULT_MAX_TOKENS = 8192;
+/**
+ * Max tokens per request within a turn. On adaptive-thinking models
+ * (Sonnet 5 / Opus 5 / Fable 5, Grok, Gemini) reasoning bills as output and
+ * counts against this cap, so 8192 — sized for text + tool calls alone — got
+ * whole build turns truncated mid-thought. Every supported model allows at
+ * least 64K output, so 16384 is safe across providers.
+ */
+export const DEFAULT_MAX_TOKENS = 16384;
 
 /** Hard ceiling on tool-calling round trips per user message, to bound runaway loops. */
 export const MAX_TOOL_TURNS = 24;
