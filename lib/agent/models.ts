@@ -87,49 +87,24 @@ export const AGENT_MODELS: AgentModelOption[] = [
 export const DEFAULT_AGENT_MODEL = 'claude-opus-5';
 
 /**
- * Model for the automatic visual self-review pass, per provider. Critiquing a
- * screenshot and making small fixes doesn't need the strongest builder model,
- * and the review turn re-runs the full system + tools prompt — on a flagship
- * model that doubles an already expensive turn. Each provider's review model is
- * a genuinely faster/cheaper tier than its builder default, so the review pass
- * adds far less wall-clock time. The review stays on the same provider as the
- * main turn so it never requires a second API key.
- *
- * Some of these ids (e.g. the Anthropic Haiku tier) are intentionally NOT in the
- * user-facing picker (AGENT_MODELS) — they're review-only, so getAgentProvider
- * honors them via isReviewModel even though they aren't selectable models.
+ * Models the removed automatic self-review pass ran on, per provider. Kept so
+ * providerOfModel still resolves these ids — they appear on assistant turns in
+ * older persisted chats (and in stored usage records).
  */
-const REVIEW_MODEL_BY_PROVIDER: Record<AgentProviderId, string> = {
+const LEGACY_REVIEW_MODEL_BY_PROVIDER: Record<AgentProviderId, string> = {
   anthropic: 'claude-haiku-4-5',
   openai: 'gpt-5-mini',
   google: 'gemini-3.5-flash',
   xai: 'grok-4.3',
 };
 
-/** The self-review model matching the given main model's provider. */
-export function reviewModelFor(model: string | null): string {
-  const provider = providerOfModel(model ?? DEFAULT_AGENT_MODEL) ?? 'anthropic';
-  return REVIEW_MODEL_BY_PROVIDER[provider];
-}
-
-/** Models used only for the auto-review pass. Some aren't in the picker
- * allowlist, so getAgentProvider accepts them for review requests specifically
- * (still requiring the provider's key). */
-export const REVIEW_MODELS: ReadonlySet<string> = new Set(Object.values(REVIEW_MODEL_BY_PROVIDER));
-
-/** Whether a model id is a review-only model the server should honor even when
- * it isn't a selectable (allowlisted/enabled) picker model. */
-export function isReviewModel(id: string): boolean {
-  return REVIEW_MODELS.has(id);
-}
-
 /** Which provider serves a model id, or null for unknown/custom models.
- * Resolves both picker models (AGENT_MODELS) and review-only models (which are
- * intentionally absent from the picker) so key/provider checks work for both. */
+ * Resolves picker models (AGENT_MODELS) and the legacy review-only ids found
+ * in older chats, so key/provider checks work for both. */
 export function providerOfModel(id: string): AgentProviderId | null {
   const pickerProvider = AGENT_MODELS.find((model) => model.id === id)?.provider;
   if (pickerProvider) return pickerProvider;
-  const reviewEntry = (Object.entries(REVIEW_MODEL_BY_PROVIDER) as Array<[AgentProviderId, string]>)
+  const reviewEntry = (Object.entries(LEGACY_REVIEW_MODEL_BY_PROVIDER) as Array<[AgentProviderId, string]>)
     .find(([, modelId]) => modelId === id);
   return reviewEntry ? reviewEntry[0] : null;
 }

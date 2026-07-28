@@ -337,10 +337,8 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
   const messages = useAiChatStore((s) => s.messages);
   const status = useAiChatStore((s) => s.status);
   const error = useAiChatStore((s) => s.error);
-  const autoReview = useAiChatStore((s) => s.autoReview);
   const model = useAiChatStore((s) => s.model);
   const sendMessage = useAiChatStore((s) => s.sendMessage);
-  const setAutoReview = useAiChatStore((s) => s.setAutoReview);
   const setModel = useAiChatStore((s) => s.setModel);
   const revertTurn = useAiChatStore((s) => s.revertTurn);
   const redoTurn = useAiChatStore((s) => s.redoTurn);

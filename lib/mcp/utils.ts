@@ -513,6 +513,27 @@ export function applyDesignToLayer(
   return { ...layer, classes: classes.join(' ') };
 }
 
+/**
+ * Ensure a layer's design + classes actually render its `variables.backgroundImage`.
+ *
+ * Setting the variable alone only provides the `--bg-img` CSS value at render time —
+ * nothing consumes it until the layer also has `design.backgrounds.backgroundImage`
+ * pointing at the var (which generates the `bg-[image:var(--bg-img)]` class).
+ * Mirrors what the builder's BackgroundsControls does when picking an image.
+ * Cover/center/no-repeat defaults are only applied when not already set.
+ */
+export function applyBackgroundImageDesign(layer: Layer): Layer {
+  const bg = layer.design?.backgrounds || {};
+  const patch: Record<string, unknown> = {
+    isActive: true,
+    backgroundImage: buildBgImgVarName('desktop', 'neutral'),
+  };
+  if (!bg.backgroundSize) patch.backgroundSize = 'cover';
+  if (!bg.backgroundPosition) patch.backgroundPosition = 'center';
+  if (!bg.backgroundRepeat) patch.backgroundRepeat = 'no-repeat';
+  return applyDesignToLayer(layer, { backgrounds: patch });
+}
+
 // ── Element Templates ────────────────────────────────────────────────────────
 
 function textLayerTemplate(
