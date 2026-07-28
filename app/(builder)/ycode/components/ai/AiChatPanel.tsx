@@ -1101,6 +1101,50 @@ function formatDuration(ms?: number): string {
 }
 
 /**
+ * Rotating header phrases for the stretches where the model is working but
+ * nothing visible streams (reasoning models can think silently for tens of
+ * seconds). Generic on purpose — real actions are narrated by the tool rows
+ * underneath; these just keep the header alive between them.
+ */
+const WORKING_PHRASES = [
+  'Working…',
+  'Thinking it through…',
+  'Planning the changes…',
+  'Working out the details…',
+  'Putting it together…',
+  'Still on it…',
+];
+
+/** Seconds each working phrase stays up before rotating to the next. */
+const WORKING_PHRASE_SECONDS = 5;
+
+/** Live turn header: rotates through working phrases and ticks the elapsed
+ * time every second, so the status visibly moves even while the model is
+ * silent. Mounted fresh for each streaming turn (unmounts when it ends). */
+function LiveWorkingLabel() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setElapsed(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const phrase = WORKING_PHRASES[
+    Math.floor(elapsed / WORKING_PHRASE_SECONDS) % WORKING_PHRASES.length
+  ];
+
+  return (
+    <span>
+      {phrase}
+      {elapsed > 0 && <span className="tabular-nums text-muted-foreground/70"> {elapsed}s</span>}
+    </span>
+  );
+}
+
+/**
  * Collapsible "Thought for Ns" header wrapping a turn's narration and tool
  * steps. While streaming it stays expanded with a live spinner; once done it
  * collapses by default so only the summary + Changes card remain visible.
@@ -1132,7 +1176,7 @@ function ThoughtDisclosure({
         ) : (
           <Icon name="chevronRight" className={cn('size-3 transition-transform', open && 'rotate-90')} />
         )}
-        <span>{streaming ? 'Working…' : `Thought for ${formatDuration(thinkingMs)}`}</span>
+        {streaming ? <LiveWorkingLabel /> : <span>{`Thought for ${formatDuration(thinkingMs)}`}</span>}
       </button>
       {expanded && (
         <div className="ml-1 border-l border-border pl-2.5">
