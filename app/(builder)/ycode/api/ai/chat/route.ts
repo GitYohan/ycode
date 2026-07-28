@@ -20,11 +20,13 @@ import type { AgentContentBlock, AgentMessage } from '@/lib/agent/providers/type
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Vercel hard-kills the function at this limit without running catch/finally,
-// so the stream just stops and the turn looks silently truncated. The agent
-// loop stops itself earlier (MAX_RUN_MS in lib/agent/config.ts) to end runs
-// gracefully — keep that budget below this value.
-export const maxDuration = 800;
+// This route's maxDuration is set in vercel.json (300s — the Vercel hobby-plan
+// ceiling), NOT exported here: a route-level export always overrides
+// vercel.json, which would prevent paid deployments (e.g. Ycode Cloud) from
+// raising it in their own vercel.json. Deployments that raise it must also set
+// AI_CHAT_MAX_DURATION to match, so the agent loop (MAX_RUN_MS in
+// lib/agent/config.ts) stops itself before Vercel hard-kills the function
+// without running catch/finally.
 
 /**
  * Lightweight in-process rate limiter with a per-tenant sliding window, bounding
